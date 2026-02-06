@@ -1,0 +1,1 @@
+# zrozumto-platforma
