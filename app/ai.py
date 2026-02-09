@@ -12,41 +12,47 @@ if not api_key:
 client = genai.Client(api_key=api_key)
 MODEL_NAME = "gemini-2.0-flash"
 
-def generate_quiz_from_audio(audio_file_path: str):
+def generate_quiz_content(file_paths: list[str]):
     """
-    Generates a quiz from a local audio file using Google GenAI.
+    Generates a quiz from a list of local files (audio, images) using Google GenAI.
     """
-    uploaded_file = None
+    uploaded_files = []
     try:
-        print(f"--> Uploading {audio_file_path} to Google...")
-        uploaded_file = client.files.upload(file=audio_file_path)
+        print(f"--> Uploading {len(file_paths)} files to Google...")
+        for path in file_paths:
+            uf = client.files.upload(file=path)
+            uploaded_files.append(uf)
+            print(f"    Uploaded: {path} -> {uf.name}")
         
         prompt = """
-        Jesteś nauczycielem matematyki. Przesłuchałeś nagranie z lekcji (plik audio).
-        Twoim zadaniem jest stworzyć quiz sprawdzający wiedzę.
+        Jesteś nauczycielem matematyki. Przeanalizuj dostarczone materiały (nagranie z lekcji oraz zdjęcia zadań/notatek).
+        Twoim zadaniem jest stworzyć quiz sprawdzający wiedzę z tej konkretnej lekcji.
         
         Zasady:
         1. Stwórz 3 pytania zamknięte (A, B, C, D).
         2. Format wyjściowy musi być CZYSTYM JSONEM.
         3. Język polski.
+        4. Pytania powinny nawiązywać do treści z nagrania i zdjęć.
 
         Wzór JSON:
         [
           {
-            "pytanie": "Ile wynosi delta dla x^2 + 2x + 1?",
-            "odpowiedzi": ["0", "1", "-1", "4"],
-            "poprawna": "0"
+            "pytanie": "Treść pytania...",
+            "odpowiedzi": ["A", "B", "C", "D"],
+            "poprawna": "A"
           }
         ]
         """
 
         print("--> Generating content...")
+        # Prepare contents array with all files + prompt
+        contents = []
+        contents.extend(uploaded_files)
+        contents.append(prompt)
+
         response = client.models.generate_content(
             model=MODEL_NAME,
-            contents=[
-                uploaded_file,
-                prompt
-            ],
+            contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json"
             )
@@ -57,8 +63,10 @@ def generate_quiz_from_audio(audio_file_path: str):
         print(f"genai error: {e}")
         raise e
     finally:
-        if uploaded_file:
+        # Cleanup remote files
+        print("--> Cleaning up remote files...")
+        for uf in uploaded_files:
             try:
-                client.files.delete(name=uploaded_file.name)
+                client.files.delete(name=uf.name)
             except:
                 pass

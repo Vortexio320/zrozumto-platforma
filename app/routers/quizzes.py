@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from ..services import get_supabase, Client
 from ..dependencies import get_current_user
-from ..ai import generate_quiz_from_audio
+from ..ai import generate_quiz_content
 import shutil
 import os
 import json
@@ -24,8 +24,9 @@ async def generate_quiz(
         shutil.copyfileobj(file.file, buffer)
         
     try:
-        # 2. Generate Quiz via Gemini
-        quiz_text = generate_quiz_from_audio(temp_filename)
+        # 2. Generate Quiz via Gemini (using new multimodal function)
+        # Note: generate_quiz_content expects a list of paths
+        quiz_text = generate_quiz_content([temp_filename])
         
         # 3. Clean JSON
         clean_json = quiz_text.replace("```json", "").replace("```", "").strip()

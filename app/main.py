@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from .routers import lessons, quizzes, auth
+from .routers import lessons, quizzes, auth, webhooks
 import os
 from dotenv import load_dotenv
 
@@ -22,6 +22,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(lessons.router)
 app.include_router(quizzes.router)
+app.include_router(webhooks.router)
 
 
 
