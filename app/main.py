@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from .routers import lessons, quizzes, auth, webhooks
@@ -39,7 +39,16 @@ from fastapi.responses import FileResponse
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
 
-# Mount static files at /static
+# Config endpoint for frontend (Supabase anon key - no auth required)
+@app.get("/api/config")
+async def get_config():
+    url = os.environ.get("SUPABASE_URL")
+    anon_key = os.environ.get("SUPABASE_ANON_KEY")
+    if not url or not anon_key:
+        raise HTTPException(status_code=500, detail="Supabase config not configured")
+    return {"supabaseUrl": url, "supabaseAnonKey": anon_key}
+
+# Mount static files at /static (after /api routes)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 @app.get("/")

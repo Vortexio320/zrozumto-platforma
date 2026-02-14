@@ -208,3 +208,4 @@ __marimo__/
 
 # Git filter-repo replacements (contains sensitive data)
 replacements.txt
+supabase_redact.txt

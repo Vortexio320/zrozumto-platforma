@@ -1,8 +1,5 @@
-// Supabase Configuration
-const SUPABASE_URL = "[REDACTED]";
-const SUPABASE_ANON_KEY = "[REDACTED]";
-
-const sbClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Supabase client - initialized from /api/config
+let sbClient = null;
 
 // State
 let currentUser = null;
@@ -14,6 +11,16 @@ const views = {
     dashboard: document.getElementById('dashboard-view'),
     lesson: document.getElementById('lesson-view'),
 };
+
+// --- Init: fetch config and create Supabase client ---
+async function initSupabase() {
+    const res = await fetch('/api/config');
+    const { supabaseUrl, supabaseAnonKey } = await res.json();
+    if (!supabaseUrl || !supabaseAnonKey) {
+        throw new Error('Missing Supabase config');
+    }
+    sbClient = supabase.createClient(supabaseUrl, supabaseAnonKey);
+}
 
 // --- Auth Functions ---
 
@@ -87,16 +94,18 @@ async function signUpWithPassword() {
 // Check Session on Load
 window.onload = async () => {
     try {
+        await initSupabase();
         const { data: { session }, error } = await sbClient.auth.getSession();
         if (error) console.error("Error getting session:", error);
         handleSession(session);
+
+        sbClient.auth.onAuthStateChange((_event, session) => {
+            handleSession(session);
+        });
     } catch (err) {
         console.error("Critical error in window.onload:", err);
+        document.body.innerHTML = '<p class="p-8 text-red-500">Błąd ładowania konfiguracji. Sprawdź połączenie.</p>';
     }
-
-    sbClient.auth.onAuthStateChange((_event, session) => {
-        handleSession(session);
-    });
 };
 
 function handleSession(session) {
