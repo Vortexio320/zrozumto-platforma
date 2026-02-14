@@ -3,8 +3,8 @@ import os
 
 # Configuration
 URL = "http://127.0.0.1:8000/webhooks/ingest"
-***REMOVED***
-***REMOVED*** # Known valid email from previous steps
+SECRET = os.environ.get("WEBHOOK_SECRET", "")
+EMAIL = os.environ.get("TEST_STUDENT_EMAIL", "test@example.com")
 
 def test_webhook():
     print(f"Testing webhook at {URL}...")
