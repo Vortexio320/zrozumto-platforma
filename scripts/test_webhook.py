@@ -1,8 +1,11 @@
 import requests
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Configuration
-URL = "http://127.0.0.1:8000/webhooks/ingest"
+URL = os.environ.get("WEBHOOK_URL", "http://127.0.0.1:8000/webhooks/ingest")
 SECRET = os.environ.get("WEBHOOK_SECRET", "")
 EMAIL = os.environ.get("TEST_STUDENT_EMAIL", "test@example.com")
 

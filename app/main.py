@@ -10,9 +10,13 @@ load_dotenv()
 app = FastAPI(title="ZrozumTo Platforma", version="0.1.0")
 
 # CORS (Allow frontend to communicate)
+_cors_origins = os.environ.get(
+    "CORS_ORIGINS",
+    "https://platforma.zrozum-to.pl,http://localhost:8000,http://127.0.0.1:8000"
+).split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, replace with specific domain
+    allow_origins=[o.strip() for o in _cors_origins],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

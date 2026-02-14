@@ -205,3 +205,6 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Git filter-repo replacements (contains sensitive data)
+replacements.txt

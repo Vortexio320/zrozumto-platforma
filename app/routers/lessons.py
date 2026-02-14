@@ -45,7 +45,7 @@ async def create_lesson(
 ):
     try:
         # 1. Create Lesson
-        lesson_data = lesson.dict()
+        lesson_data = lesson.model_dump() if hasattr(lesson, "model_dump") else lesson.dict()
         res_lesson = supabase.table("lessons").insert(lesson_data).execute()
         new_lesson = res_lesson.data[0]
         

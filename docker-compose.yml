@@ -21,14 +21,14 @@ services:
     ports:
       - "5678:5678"
     environment:
-      - N8N_HOST=n8n.local
-      - N8N_PORT=5678
-      - N8N_PROTOCOL=http
-      - WEBHOOK_URL=http://localhost:5678/
-      - GENERIC_TIMEZONE=Europe/Warsaw
-      # Optimization for 2GB RAM server
-      - NODE_OPTIONS=--max-old-space-size=1024
-      - EXECUTIONS_PROCESS=main
+  environment:
+   - N8N_HOST=n8n.zrozum-to.pl
+   - N8N_PORT=5678
+    - N8N_PROTOCOL=https
+    - WEBHOOK_URL=https://n8n.zrozum-to.pl/
+    - GENERIC_TIMEZONE=Europe/Warsaw
+    - NODE_OPTIONS=--max-old-space-size=1024
+    - EXECUTIONS_PROCESS=main
     volumes:
       - n8n_data:/home/node/.n8n
 
