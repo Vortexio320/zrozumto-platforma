@@ -5,8 +5,15 @@ from datetime import datetime
 
 class UserProfile(BaseModel):
     id: UUID
+    username: str
     role: str
     full_name: Optional[str] = None
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    full_name: Optional[str] = None
+    role: str = "student"
 
 class LessonBase(BaseModel):
     title: str

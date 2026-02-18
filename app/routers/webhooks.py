@@ -23,37 +23,24 @@ async def verify_secret(x_webhook_secret: str = Header(...)):
 @router.post("/ingest")
 async def ingest_lesson(
     background_tasks: BackgroundTasks,
-    student_email: str = Form(...),
+    student_username: str = Form(...),
     title: str = Form(...),
     files: List[UploadFile] = File(None),
     secret: str = Depends(verify_secret),
 ):
-    print(f"WEBHOOK: Received ingestion request for: {student_email}, topic: {title}")
-    supabase = get_supabase() # Service Role Client
+    print(f"WEBHOOK: Received ingestion request for: {student_username}, topic: {title}")
+    supabase = get_supabase()
 
-    # 1. Find User by Email
-    # In Supabase, usually profiles table mirrors auth.users, but for email we must check auth.users via Admin API
-    # because profiles table might not have email or RLS blocks it.
-    # Service Role allows bypassing RLS, but email is in auth schema.
-    
     user_id = None
     try:
-        # Fetch users (default limit is 50, usually enough for now)
-        # Note: supabase-py admin client usage might vary by version.
-        # We try to use the auth.admin interface.
-        users_response = supabase.auth.admin.list_users()
-        for user in users_response:
-             if user.email == student_email:
-                 user_id = user.id
-                 break
+        profile = supabase.table("profiles").select("id").eq("username", student_username).single().execute()
+        user_id = profile.data["id"]
     except Exception as e:
         print(f"WEBHOOK ERROR: User lookup failed: {e}")
-        # Fallback: Try to find in profiles if email column existed (it doesn't).
-        pass
 
     if not user_id:
-        print(f"WEBHOOK WARNING: Student with email {student_email} not found.")
-        raise HTTPException(status_code=404, detail=f"Student with email {student_email} not found")
+        print(f"WEBHOOK WARNING: Student '{student_username}' not found.")
+        raise HTTPException(status_code=404, detail=f"Student '{student_username}' not found")
 
     # 2. Save uploaded files to temp
     temp_paths = []
