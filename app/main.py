@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from .routers import lessons, quizzes, auth, webhooks
+from .routers import lessons, quizzes, auth, webhooks, admin
 import os
 from dotenv import load_dotenv
 
@@ -27,6 +27,7 @@ app.include_router(auth.router)
 app.include_router(lessons.router)
 app.include_router(quizzes.router)
 app.include_router(webhooks.router)
+app.include_router(admin.router)
 
 
 

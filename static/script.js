@@ -1,9 +1,6 @@
-// Supabase client - initialized from /api/config
-let sbClient = null;
-
-// State
-let currentUser = null;
-let currentSession = null;
+// Session state
+let accessToken = null;
+let currentUserInfo = null;
 
 // DOM Elements
 const views = {
@@ -12,27 +9,16 @@ const views = {
     lesson: document.getElementById('lesson-view'),
 };
 
-// --- Init: fetch config and create Supabase client ---
-async function initSupabase() {
-    const res = await fetch('/api/config');
-    const { supabaseUrl, supabaseAnonKey } = await res.json();
-    if (!supabaseUrl || !supabaseAnonKey) {
-        throw new Error('Missing Supabase config');
-    }
-    sbClient = supabase.createClient(supabaseUrl, supabaseAnonKey);
-}
+// --- Auth ---
 
-// --- Auth Functions ---
-
-async function signInWithPassword() {
-    console.log("Button clicked: signInWithPassword");
-    const email = document.getElementById('email').value;
+async function loginWithUsername() {
+    const username = document.getElementById('username').value.trim();
     const password = document.getElementById('password').value;
     const msg = document.getElementById('auth-message');
     const btn = document.getElementById('login-btn');
 
-    if (!email || !password) {
-        msg.innerText = "Podaj email i hasło.";
+    if (!username || !password) {
+        msg.innerText = "Podaj nazwę użytkownika i hasło.";
         msg.classList.remove('hidden');
         return;
     }
@@ -41,89 +27,64 @@ async function signInWithPassword() {
     btn.disabled = true;
     btn.innerText = "Logowanie...";
 
-    const { data, error } = await sbClient.auth.signInWithPassword({
-        email: email,
-        password: password
-    });
-
-    btn.disabled = false;
-    btn.innerText = "Zaloguj";
-
-    if (error) {
-        msg.innerText = "Błąd: " + error.message;
-        msg.classList.remove('hidden');
-    }
-    // Success will be handled by onAuthStateChange
-}
-
-async function signUpWithPassword() {
-    console.log("Button clicked: signUpWithPassword");
-    const email = document.getElementById('email').value;
-    const password = document.getElementById('password').value;
-    const msg = document.getElementById('auth-message');
-    const btn = document.getElementById('signup-btn');
-
-    if (!email || !password) {
-        msg.innerText = "Podaj email i hasło.";
-        msg.classList.remove('hidden');
-        return;
-    }
-
-    msg.classList.add('hidden');
-    btn.disabled = true;
-    btn.innerText = "Rejestracja...";
-
-    const { data, error } = await sbClient.auth.signUp({
-        email: email,
-        password: password
-    });
-
-    btn.disabled = false;
-    btn.innerText = "Zarejestruj";
-
-    if (error) {
-        msg.innerText = "Błąd: " + error.message;
-        msg.classList.remove('hidden');
-    } else {
-        msg.innerText = "Konto utworzone! Jeśli wymagane potwierdzenie, sprawdź email, lub spróbuj się zalogować.";
-        msg.className = "text-sm text-center text-green-600";
-        msg.classList.remove('hidden');
-    }
-}
-
-// Check Session on Load
-window.onload = async () => {
     try {
-        await initSupabase();
-        const { data: { session }, error } = await sbClient.auth.getSession();
-        if (error) console.error("Error getting session:", error);
-        handleSession(session);
-
-        sbClient.auth.onAuthStateChange((_event, session) => {
-            handleSession(session);
+        const res = await fetch('/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password }),
         });
-    } catch (err) {
-        console.error("Critical error in window.onload:", err);
-        document.body.innerHTML = '<p class="p-8 text-red-500">Błąd ładowania konfiguracji. Sprawdź połączenie.</p>';
+
+        const data = await res.json();
+
+        if (!res.ok) {
+            msg.innerText = data.detail || "Błąd logowania";
+            msg.classList.remove('hidden');
+            return;
+        }
+
+        accessToken = data.access_token;
+        currentUserInfo = data.user;
+        sessionStorage.setItem('access_token', accessToken);
+        sessionStorage.setItem('user_info', JSON.stringify(currentUserInfo));
+        showLoggedIn();
+    } catch (e) {
+        console.error(e);
+        msg.innerText = "Błąd połączenia z serwerem.";
+        msg.classList.remove('hidden');
+    } finally {
+        btn.disabled = false;
+        btn.innerText = "Zaloguj";
     }
-};
+}
 
-function handleSession(session) {
-    currentSession = session;
-    currentUser = session?.user;
+function logout() {
+    accessToken = null;
+    currentUserInfo = null;
+    sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('user_info');
+    showView('login');
+    document.getElementById('user-menu').classList.add('hidden');
+}
 
-    if (currentUser) {
-        showView('dashboard');
-        loadLessons();
-        document.getElementById('user-email').innerText = currentUser.email;
+function showLoggedIn() {
+    showView('dashboard');
+    document.getElementById('user-menu').classList.remove('hidden');
+    document.getElementById('user-display-name').innerText = currentUserInfo.username || '';
+    loadLessons();
+}
+
+// Restore session on page load
+window.onload = () => {
+    const savedToken = sessionStorage.getItem('access_token');
+    const savedUser = sessionStorage.getItem('user_info');
+    if (savedToken && savedUser) {
+        accessToken = savedToken;
+        currentUserInfo = JSON.parse(savedUser);
+        showLoggedIn();
     } else {
         showView('login');
     }
-}
-
-async function signOut() {
-    await sbClient.auth.signOut();
-}
+};
 
 // --- Navigation ---
 
@@ -132,13 +93,15 @@ function showView(viewName) {
     views[viewName].classList.remove('hidden');
 }
 
+function authHeaders() {
+    return { 'Authorization': `Bearer ${accessToken}` };
+}
+
 // --- Data & Logic ---
 
 async function createTestLesson() {
     const title = prompt("Podaj tytuł nowej lekcji:");
     if (!title) return;
-
-    const token = currentSession.access_token;
 
     try {
         const response = await fetch('/lessons/', {
@@ -146,7 +109,7 @@ async function createTestLesson() {
             body: JSON.stringify({ title: title, description: "Lekcja utworzona automatycznie" }),
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
+                ...authHeaders(),
             }
         });
 
@@ -164,17 +127,15 @@ async function createTestLesson() {
 }
 
 async function loadLessons() {
-    // Call our Backend API which uses Supabase Client + RLS
-    // We need to pass the JWT token in headers
-
-    const token = currentSession.access_token;
-
     try {
         const response = await fetch('/lessons/', {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
+            headers: authHeaders(),
         });
+
+        if (response.status === 401) {
+            logout();
+            return;
+        }
 
         if (!response.ok) throw new Error('Failed to fetch lessons');
 
@@ -213,9 +174,7 @@ function renderLessonsList(lessons) {
 function openLesson(lesson) {
     showView('lesson');
     document.getElementById('lesson-title').innerText = lesson.title;
-    document.getElementById('lesson-id').value = lesson.id; // Hidden input for upload
-
-    // Reset state
+    document.getElementById('lesson-id').value = lesson.id;
     document.getElementById('quiz-result').innerHTML = '';
 }
 
@@ -238,16 +197,18 @@ async function uploadAndGenerate() {
     loading.classList.remove('hidden');
 
     try {
-        const token = currentSession.access_token;
-        const url = `/quizzes/generate?lesson_id=${lessonId}`; // Fixed param name to match backend
+        const url = `/quizzes/generate?lesson_id=${lessonId}`;
 
         const res = await fetch(url, {
             method: 'POST',
             body: formData,
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
+            headers: authHeaders(),
         });
+
+        if (res.status === 401) {
+            logout();
+            return;
+        }
 
         const data = await res.json();
 
@@ -289,13 +250,6 @@ function renderQuiz(questions) {
 
 function checkAns(btn, correct) {
     const text = btn.innerText;
-    // Assuming format is just text or "A. text"
-    // The previous logic checked startsWith, let's keep it simple
-    // Actually our Schema says 'poprawna' is e.g. "0" (index) or the text?
-    // The prompt says: "odpowiedzi": ["1", "4"] and "poprawna": "0" (index string?) or value?
-    // Let's check the prompt in ai.py.
-    // "odpowiedzi": ["0", "1", "-1", "4"], "poprawna": "0". It seems 'poprawna' is the VALUE.
-
     if (text === correct || text.startsWith(correct)) {
         btn.classList.add('bg-green-100', 'border-green-300', 'text-green-700');
     } else {

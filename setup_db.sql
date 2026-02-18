@@ -5,6 +5,7 @@
 -- drop table if exists public.profiles cascade;
 create table if not exists public.profiles (
   id uuid references auth.users not null primary key,
+  username text unique not null,
   role text check (role in ('student', 'parent', 'admin')) default 'student',
   full_name text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
@@ -27,8 +28,13 @@ create policy "Users can update own profile" on public.profiles
 create or replace function public.handle_new_user() 
 returns trigger as $$
 begin
-  insert into public.profiles (id, full_name, role)
-  values (new.id, new.raw_user_meta_data->>'full_name', 'student');
+  insert into public.profiles (id, username, full_name, role)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data->>'username', split_part(new.email, '@', 1)),
+    new.raw_user_meta_data->>'full_name',
+    coalesce(new.raw_user_meta_data->>'role', 'student')
+  );
   return new;
 end;
 $$ language plpgsql security definer;
