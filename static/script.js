@@ -175,22 +175,24 @@ async function openLesson(lesson) {
     showView('lesson');
     document.getElementById('lesson-title').innerText = lesson.title;
     document.getElementById('lesson-id').value = lesson.id;
-    document.getElementById('quiz-result').innerHTML = '<p class="text-gray-500">Ładowanie...</p>';
+    const quizEl = document.getElementById('quiz-result');
+    quizEl.innerHTML = '<p class="text-gray-500">Ładowanie quizu...</p>';
 
     try {
         const res = await fetch(`/quizzes/${lesson.id}`, { headers: authHeaders() });
-        if (res.ok) {
-            const data = await res.json();
+        const data = await res.json();
+        if (res.ok && data) {
             const quiz = Array.isArray(data) ? data[0] : data;
-            if (quiz?.questions_json?.length) {
-                renderQuiz(quiz.questions_json);
+            const questions = quiz?.questions_json;
+            if (questions && questions.length > 0) {
+                renderQuiz(questions);
                 return;
             }
         }
     } catch (e) {
-        console.error(e);
+        console.error('Błąd ładowania quizu:', e);
     }
-    document.getElementById('quiz-result').innerHTML = '';
+    quizEl.innerHTML = '<p class="text-gray-500">Brak quizu dla tej lekcji.</p>';
 }
 
 // --- Upload & Generate ---
