@@ -1,6 +1,7 @@
 from google import genai
 from google.genai import types
 import os
+import mimetypes
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,6 +13,15 @@ if not api_key:
 client = genai.Client(api_key=api_key)
 MODEL_NAME = "gemini-2.0-flash"
 
+MIME_FALLBACKS = {".m4a": "audio/mp4", ".m4v": "video/mp4", ".webm": "video/webm"}
+
+def _get_mime_type(path: str) -> str:
+    ext = os.path.splitext(path)[1].lower()
+    if ext in MIME_FALLBACKS:
+        return MIME_FALLBACKS[ext]
+    guessed, _ = mimetypes.guess_type(path)
+    return guessed or "application/octet-stream"
+
 def generate_quiz_content(file_paths: list[str]):
     """
     Generates a quiz from a list of local files (audio, images) using Google GenAI.
@@ -20,9 +30,10 @@ def generate_quiz_content(file_paths: list[str]):
     try:
         print(f"--> Uploading {len(file_paths)} files to Google...")
         for path in file_paths:
-            uf = client.files.upload(file=path)
+            mime_type = _get_mime_type(path)
+            uf = client.files.upload(file=path, mime_type=mime_type)
             uploaded_files.append(uf)
-            print(f"    Uploaded: {path} -> {uf.name}")
+            print(f"    Uploaded: {path} (mime: {mime_type}) -> {uf.name}")
         
         prompt = """
         Jesteś nauczycielem matematyki. Przeanalizuj dostarczone materiały (nagranie z lekcji oraz zdjęcia zadań/notatek).
