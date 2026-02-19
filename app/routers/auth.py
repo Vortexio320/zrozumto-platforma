@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from ..dependencies import get_current_user
 from ..services import get_supabase
+from ..dependencies import get_current_user
 import os
 
 EMAIL_DOMAIN = os.environ.get("USER_EMAIL_DOMAIN", "zrozum-to.pl")
@@ -28,15 +28,22 @@ async def login(req: LoginRequest):
             "email": internal_email,
             "password": req.password,
         })
+        try:
+            profile = supabase.table("profiles").select("username, role").eq("id", str(res.user.id)).single().execute()
+            profile_data = profile.data or {}
+        except Exception:
+            profile_data = {}
         return {
             "access_token": res.session.access_token,
             "refresh_token": res.session.refresh_token,
             "user": {
                 "id": str(res.user.id),
-                "username": (res.user.user_metadata or {}).get("username", req.username),
-                "role": (res.user.user_metadata or {}).get("role", "student"),
+                "username": profile_data.get("username", req.username),
+                "role": profile_data.get("role", "student"),
             }
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=401, detail="Nieprawidłowa nazwa użytkownika lub hasło")
 
