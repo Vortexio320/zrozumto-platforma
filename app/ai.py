@@ -31,7 +31,7 @@ def generate_quiz_content(file_paths: list[str]):
         print(f"--> Uploading {len(file_paths)} files to Google...")
         for path in file_paths:
             mime_type = _get_mime_type(path)
-            uf = client.files.upload(file=path, mime_type=mime_type)
+            uf = client.files.upload(file=path, config=types.UploadFileConfig(mime_type=mime_type))
             uploaded_files.append(uf)
             print(f"    Uploaded: {path} (mime: {mime_type}) -> {uf.name}")
         
