@@ -171,10 +171,25 @@ function renderLessonsList(lessons) {
     });
 }
 
-function openLesson(lesson) {
+async function openLesson(lesson) {
     showView('lesson');
     document.getElementById('lesson-title').innerText = lesson.title;
     document.getElementById('lesson-id').value = lesson.id;
+    document.getElementById('quiz-result').innerHTML = '<p class="text-gray-500">Ładowanie...</p>';
+
+    try {
+        const res = await fetch(`/quizzes/${lesson.id}`, { headers: authHeaders() });
+        if (res.ok) {
+            const data = await res.json();
+            const quiz = Array.isArray(data) ? data[0] : data;
+            if (quiz?.questions_json?.length) {
+                renderQuiz(quiz.questions_json);
+                return;
+            }
+        }
+    } catch (e) {
+        console.error(e);
+    }
     document.getElementById('quiz-result').innerHTML = '';
 }
 
