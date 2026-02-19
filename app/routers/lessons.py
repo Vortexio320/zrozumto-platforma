@@ -20,7 +20,11 @@ async def get_lessons(
     # We use the RLS policies in Supabase, but explicit query helps too.
     # Because of RLS, 'select * from lessons' should only return visible lessons.
     try:
-        response = supabase.table("lessons").select("*").execute()
+        assignments = supabase.table("lesson_assignments").select("lesson_id").eq("student_id", str(user.id)).execute()
+        lesson_ids = [a["lesson_id"] for a in assignments.data]
+        if not lesson_ids:
+            return []
+        response = supabase.table("lessons").select("*").in_("id", lesson_ids).order("created_at", desc=True).execute()
         return response.data
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
