@@ -2,6 +2,7 @@ from fastapi import APIRouter, Header, HTTPException, status, UploadFile, File, 
 from typing import List, Optional
 import os
 import shutil
+import uuid
 from datetime import datetime
 from ..services import get_supabase
 from ..worker import process_ingested_content
@@ -47,8 +48,10 @@ async def ingest_lesson(
     if files:
         temp_dir = "temp_ingest"
         os.makedirs(temp_dir, exist_ok=True)
-        for file in files:
-            file_path = os.path.join(temp_dir, f"{datetime.now().timestamp()}_{file.filename}")
+        for i, file in enumerate(files):
+            ext = os.path.splitext(file.filename or "bin")[1] or ".bin"
+            safe_name = f"{datetime.now().timestamp()}_{i}_{uuid.uuid4().hex[:8]}{ext}"
+            file_path = os.path.join(temp_dir, safe_name)
             with open(file_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
             temp_paths.append(file_path)
