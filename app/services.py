@@ -14,3 +14,7 @@ supabase: Client = create_client(url, key)
 
 def get_supabase() -> Client:
     return supabase
+
+def get_admin_supabase() -> Client:
+    """Fresh client guaranteed to use the service role key (no tainted JWT headers)."""
+    return create_client(url, key)

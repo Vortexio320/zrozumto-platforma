@@ -1,6 +1,7 @@
 from google import genai
 from google.genai import types
 import os
+import json
 import mimetypes
 from dotenv import load_dotenv
 
@@ -22,10 +23,17 @@ def _get_mime_type(path: str) -> str:
     guessed, _ = mimetypes.guess_type(path)
     return guessed or "application/octet-stream"
 
+
+def _call_gemini_json(prompt: str) -> str:
+    response = client.models.generate_content(
+        model=MODEL_NAME,
+        contents=[prompt],
+        config=types.GenerateContentConfig(response_mime_type="application/json"),
+    )
+    return response.text
+
+
 def generate_quiz_content(file_paths: list[str]):
-    """
-    Generates a quiz from a list of local files (audio, images) using Google GenAI.
-    """
     uploaded_files = []
     try:
         print(f"--> Uploading {len(file_paths)} files to Google...")
@@ -34,29 +42,30 @@ def generate_quiz_content(file_paths: list[str]):
             uf = client.files.upload(file=path, config=types.UploadFileConfig(mime_type=mime_type))
             uploaded_files.append(uf)
             print(f"    Uploaded: {path} (mime: {mime_type}) -> {uf.name}")
-        
+
         prompt = """
         Jesteś nauczycielem matematyki. Przeanalizuj dostarczone materiały (nagranie z lekcji oraz zdjęcia zadań/notatek).
         Twoim zadaniem jest stworzyć quiz sprawdzający wiedzę z tej konkretnej lekcji.
-        
+
         Zasady:
-        1. Stwórz 3 pytania zamknięte (A, B, C, D).
+        1. Stwórz 10 pytań zamkniętych (A, B, C, D).
         2. Format wyjściowy musi być CZYSTYM JSONEM.
         3. Język polski.
         4. Pytania powinny nawiązywać do treści z nagrania i zdjęć.
+        5. Każde pytanie MUSI zawierać pole "wyjasnienie" z krótkim uzasadnieniem poprawnej odpowiedzi.
 
         Wzór JSON:
         [
           {
             "pytanie": "Treść pytania...",
-            "odpowiedzi": ["A", "B", "C", "D"],
-            "poprawna": "A"
+            "odpowiedzi": ["A) odpowiedź", "B) odpowiedź", "C) odpowiedź", "D) odpowiedź"],
+            "poprawna": "A) odpowiedź",
+            "wyjasnienie": "Poprawna odpowiedź to A, ponieważ..."
           }
         ]
         """
 
         print("--> Generating content...")
-        # Prepare contents array with all files + prompt
         contents = []
         contents.extend(uploaded_files)
         contents.append(prompt)
@@ -64,9 +73,7 @@ def generate_quiz_content(file_paths: list[str]):
         response = client.models.generate_content(
             model=MODEL_NAME,
             contents=contents,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
         )
         return response.text
 
@@ -74,10 +81,145 @@ def generate_quiz_content(file_paths: list[str]):
         print(f"genai error: {e}")
         raise e
     finally:
-        # Cleanup remote files
         print("--> Cleaning up remote files...")
         for uf in uploaded_files:
             try:
                 client.files.delete(name=uf.name)
             except:
                 pass
+
+
+def generate_lesson_summary(file_paths: list[str]) -> dict:
+    """Analyzes lesson files and returns a dict with 'title' and 'description'."""
+    uploaded_files = []
+    try:
+        for path in file_paths:
+            mime_type = _get_mime_type(path)
+            uf = client.files.upload(file=path, config=types.UploadFileConfig(mime_type=mime_type))
+            uploaded_files.append(uf)
+
+        prompt = """
+        Przeanalizuj dostarczone materiały z lekcji (nagranie audio i/lub zdjęcia notatek).
+        Rozpoznaj temat lekcji i wygeneruj:
+        1. Krótki, konkretny tytuł lekcji (np. "Logarytmy i ich właściwości", "Równania kwadratowe").
+        2. Opis lekcji w 1-2 zdaniach opisujący czego dotyczy lekcja.
+
+        Format JSON:
+        {
+          "title": "Konkretny tytuł lekcji...",
+          "description": "Krótki opis treści lekcji..."
+        }
+        """
+
+        contents = []
+        contents.extend(uploaded_files)
+        contents.append(prompt)
+
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=contents,
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
+        clean = response.text.replace("```json", "").replace("```", "").strip()
+        return json.loads(clean)
+
+    except Exception as e:
+        print(f"generate_lesson_summary error: {e}")
+        return {}
+    finally:
+        for uf in uploaded_files:
+            try:
+                client.files.delete(name=uf.name)
+            except:
+                pass
+
+
+def generate_more_questions(quiz_context: list[dict], count: int = 10, difficulty: str = "same") -> str:
+    difficulty_map = {
+        "easier": "łatwiejsze niż podane przykłady",
+        "same": "na podobnym poziomie trudności co podane przykłady",
+        "harder": "trudniejsze niż podane przykłady",
+    }
+    diff_text = difficulty_map.get(difficulty, difficulty_map["same"])
+    existing = json.dumps(quiz_context, ensure_ascii=False)
+
+    prompt = f"""
+    Jesteś nauczycielem matematyki. Oto istniejące pytania quizowe z lekcji:
+
+    {existing}
+
+    Wygeneruj {count} NOWYCH pytań zamkniętych (A, B, C, D) na ten sam temat.
+    Pytania powinny być {diff_text}.
+    NIE powtarzaj istniejących pytań.
+    Język polski. Format: CZYSTY JSON.
+
+    Wzór JSON:
+    [
+      {{
+        "pytanie": "Treść pytania...",
+        "odpowiedzi": ["A) odpowiedź", "B) odpowiedź", "C) odpowiedź", "D) odpowiedź"],
+        "poprawna": "A) odpowiedź",
+        "wyjasnienie": "Poprawna odpowiedź to A, ponieważ..."
+      }}
+    ]
+    """
+    return _call_gemini_json(prompt)
+
+
+def generate_flashcards(quiz_context: list[dict]) -> str:
+    existing = json.dumps(quiz_context, ensure_ascii=False)
+
+    prompt = f"""
+    Jesteś nauczycielem matematyki. Na podstawie poniższych pytań quizowych z lekcji,
+    stwórz zestaw fiszek do nauki kluczowych pojęć.
+
+    Pytania quizowe:
+    {existing}
+
+    Zasady:
+    1. Stwórz 8-12 fiszek.
+    2. Każda fiszka ma "przod" (pojęcie, pytanie lub wzór) i "tyl" (wyjaśnienie, odpowiedź).
+    3. Fiszki powinny pokrywać najważniejsze pojęcia z lekcji.
+    4. Język polski. Format: CZYSTY JSON.
+
+    Wzór JSON:
+    [
+      {{
+        "przod": "Czym jest...?",
+        "tyl": "To jest..."
+      }}
+    ]
+    """
+    return _call_gemini_json(prompt)
+
+
+def generate_analysis(questions: list[dict], user_answers: list) -> str:
+    data = []
+    for i, q in enumerate(questions):
+        ans = user_answers[i] if i < len(user_answers) else None
+        correct = q.get("poprawna", "")
+        data.append({
+            "pytanie": q.get("pytanie", ""),
+            "poprawna": correct,
+            "odpowiedz_ucznia": ans,
+            "czy_poprawna": ans == correct if ans else False,
+            "pominiete": ans is None,
+        })
+
+    context = json.dumps(data, ensure_ascii=False)
+
+    prompt = f"""
+    Jesteś nauczycielem matematyki. Przeanalizuj wyniki quizu ucznia:
+
+    {context}
+
+    Na podstawie wyników napisz krótką analizę (po polsku) w formacie JSON:
+    {{
+      "mocne_strony": "Opis mocnych stron ucznia (co dobrze opanował)...",
+      "obszary_do_poprawy": "Opis obszarów wymagających poprawy...",
+      "wskazowki": "Konkretne wskazówki do dalszej nauki..."
+    }}
+
+    Bądź konstruktywny i motywujący. Format: CZYSTY JSON.
+    """
+    return _call_gemini_json(prompt)

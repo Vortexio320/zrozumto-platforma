@@ -9,9 +9,12 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
+        body { font-family: 'Inter', sans-serif; }
+        .flip-card { perspective: 600px; cursor: pointer; }
+        .flip-card-inner { position: relative; width: 100%; min-height: 160px; transition: transform 0.5s; transform-style: preserve-3d; }
+        .flip-card.flipped .flip-card-inner { transform: rotateY(180deg); }
+        .flip-card-front, .flip-card-back { position: absolute; inset: 0; backface-visibility: hidden; border-radius: 1rem; display: flex; align-items: center; justify-content: center; padding: 1.5rem; text-align: center; }
+        .flip-card-back { transform: rotateY(180deg); }
     </style>
 </head>
 
@@ -24,6 +27,7 @@
             <span class="font-bold text-xl tracking-tight text-blue-600">ZrozumTo</span>
         </div>
         <div id="user-menu" class="hidden md:flex items-center gap-4">
+            <button id="admin-nav-btn" onclick="showView('admin')" class="hidden text-sm bg-purple-100 hover:bg-purple-200 text-purple-700 py-1.5 px-3 rounded-lg font-medium transition">Panel Admin</button>
             <span id="user-display-name" class="text-sm text-gray-500"></span>
             <button onclick="logout()" class="text-sm text-red-600 hover:text-red-700 font-medium">Wyloguj</button>
         </div>
@@ -82,50 +86,280 @@
                 ← Wróć do listy
             </button>
 
-            <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+            <input type="hidden" id="lesson-id">
+
+            <!-- Upload Section (shown when no quiz exists) -->
+            <div id="upload-section" class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 mb-6">
                 <h1 id="lesson-title" class="text-2xl font-bold mb-2">Tytuł Lekcji</h1>
                 <p class="text-gray-500 mb-6 border-b pb-4">Wygeneruj quiz z nagrania audio.</p>
-
-                <input type="hidden" id="lesson-id">
-
-                <!-- Upload Section -->
-                <div class="mb-8">
+                <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Wgraj nagranie (Admin/Test)</label>
                     <div class="flex gap-2">
-                        <input type="file" id="audio-file" accept="audio/*" class="block w-full text-sm text-gray-500
-                            file:mr-4 file:py-2 file:px-4
-                            file:rounded-full file:border-0
-                            file:text-sm file:font-semibold
-                            file:bg-blue-50 file:text-blue-700
-                            hover:file:bg-blue-100
-                        " />
+                        <input type="file" id="audio-file" accept="audio/*,image/*" class="block w-full text-sm text-gray-500
+                            file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0
+                            file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
                         <button id="generate-btn" onclick="uploadAndGenerate()"
                             class="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition disabled:opacity-50">
                             Generuj
                         </button>
                     </div>
                     <div id="loading-indicator" class="hidden mt-3 text-sm text-blue-600 flex items-center gap-2">
-                        <svg class="animate-spin h-4 w-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none"
-                            viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
-                            </circle>
-                            <path class="opacity-75" fill="currentColor"
-                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
-                            </path>
+                        <svg class="animate-spin h-4 w-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
-                        Analizuję nagranie...
+                        Analizuję materiały...
                     </div>
                 </div>
+            </div>
 
-                <!-- Quiz Results -->
-                <h3 class="text-lg font-semibold text-gray-800 mb-3 mt-6">Quiz</h3>
-                <div id="quiz-result"></div>
+            <!-- Quiz Taking (one question at a time) -->
+            <div id="quiz-taking" class="hidden">
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    <!-- Progress bar -->
+                    <div class="h-1.5 bg-gray-100">
+                        <div id="quiz-progress-bar" class="h-full bg-blue-600 transition-all duration-300" style="width:0%"></div>
+                    </div>
+                    <div class="p-8">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 id="quiz-title-header" class="text-lg font-bold text-gray-900">Quiz</h2>
+                            <span id="quiz-counter" class="text-sm font-medium text-gray-500">1 / 10</span>
+                        </div>
+                        <div id="quiz-question-area"></div>
+                        <div class="flex justify-between items-center mt-8 pt-4 border-t">
+                            <button onclick="prevQuestion()" id="btn-prev" class="text-sm text-gray-500 hover:text-gray-800 font-medium disabled:opacity-30" disabled>← Poprzednie</button>
+                            <button onclick="nextQuestion()" id="btn-next" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition text-sm">Następne →</button>
+                            <button onclick="submitQuiz()" id="btn-submit" class="hidden bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700 transition text-sm">Zakończ test</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quiz Results -->
+            <div id="quiz-results" class="hidden">
+                <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+                    <h2 class="text-2xl font-bold text-green-700 mb-6">Test ukończony!</h2>
+                    <div class="grid grid-cols-3 gap-4 mb-8">
+                        <div class="bg-gray-50 p-4 rounded-xl border">
+                            <p class="text-xs text-gray-500 uppercase font-semibold">Wynik</p>
+                            <p id="result-score" class="text-3xl font-bold text-gray-900 mt-1">0/10</p>
+                        </div>
+                        <div class="bg-gray-50 p-4 rounded-xl border">
+                            <p class="text-xs text-gray-500 uppercase font-semibold">Dokładność</p>
+                            <p id="result-accuracy" class="text-3xl font-bold text-gray-900 mt-1">0%</p>
+                        </div>
+                        <div class="bg-gray-50 p-4 rounded-xl border">
+                            <p class="text-xs text-gray-500 uppercase font-semibold mb-2">Szczegóły</p>
+                            <div class="text-sm space-y-1">
+                                <div class="flex justify-between"><span class="text-gray-600">Poprawne</span><span id="result-correct" class="font-semibold text-green-600">0</span></div>
+                                <div class="flex justify-between"><span class="text-gray-600">Błędne</span><span id="result-wrong" class="font-semibold text-red-600">0</span></div>
+                                <div class="flex justify-between"><span class="text-gray-600">Pominięte</span><span id="result-skipped" class="font-semibold text-gray-400">0</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI Analysis -->
+                    <div id="analysis-section" class="mb-8 hidden">
+                        <div class="bg-blue-50 p-5 rounded-xl border border-blue-100">
+                            <h3 class="font-semibold text-blue-900 mb-2">Mocne strony i obszary rozwoju</h3>
+                            <div id="analysis-content" class="text-sm text-blue-800 space-y-2"></div>
+                        </div>
+                    </div>
+                    <div id="analysis-loading" class="mb-8 hidden">
+                        <div class="bg-blue-50 p-5 rounded-xl border border-blue-100 flex items-center gap-3">
+                            <svg class="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            <span class="text-sm text-blue-700 font-medium">Analizuję Twoje wyniki...</span>
+                        </div>
+                    </div>
+
+                    <!-- Learn more cards -->
+                    <h3 class="font-semibold text-gray-800 mb-3">Ucz się dalej</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                        <button onclick="loadFlashcards()" class="text-left bg-gray-50 p-4 rounded-xl border hover:bg-gray-100 transition">
+                            <p class="font-semibold text-gray-800">Fiszki</p>
+                            <p class="text-xs text-gray-500 mt-1">Utwórz zestaw fiszek z materiałów do szybkiego powtórzenia.</p>
+                        </button>
+                        <button onclick="showMoreQuestionsDialog()" class="text-left bg-gray-50 p-4 rounded-xl border hover:bg-gray-100 transition">
+                            <p class="font-semibold text-gray-800">Więcej pytań</p>
+                            <p class="text-xs text-gray-500 mt-1">Wygeneruj dodatkowe pytania z wybraną trudnością.</p>
+                        </button>
+                    </div>
+
+                    <!-- Bottom actions -->
+                    <div class="flex justify-center gap-4 pt-4 border-t">
+                        <button onclick="showReview()" class="text-sm text-gray-600 hover:text-gray-900 font-medium">Przejrzyj test</button>
+                        <button onclick="restartQuiz()" class="text-sm bg-blue-600 text-white px-5 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">Rozwiąż ponownie</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Review Mode -->
+            <div id="quiz-review" class="hidden">
+                <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-xl font-bold text-gray-900">Przegląd odpowiedzi</h2>
+                        <button onclick="showResultsScreen()" class="text-sm text-gray-500 hover:text-gray-900 font-medium">← Wróć do wyników</button>
+                    </div>
+                    <div id="review-list" class="space-y-4"></div>
+                </div>
+            </div>
+
+            <!-- Flashcards View -->
+            <div id="quiz-flashcards" class="hidden">
+                <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-xl font-bold text-gray-900">Fiszki</h2>
+                        <button onclick="showResultsScreen()" class="text-sm text-gray-500 hover:text-gray-900 font-medium">← Wróć do wyników</button>
+                    </div>
+                    <div id="flashcards-loading" class="hidden flex items-center gap-3 justify-center py-12">
+                        <svg class="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        <span class="text-sm text-gray-500">Generuję fiszki...</span>
+                    </div>
+                    <div id="flashcards-area" class="space-y-2">
+                        <div class="flex justify-between items-center mb-2">
+                            <span id="flashcard-counter" class="text-sm text-gray-500"></span>
+                        </div>
+                        <div id="flashcard-card"></div>
+                        <div id="flashcard-nav" class="flex justify-between items-center mt-4 hidden">
+                            <button onclick="prevFlashcard()" class="text-sm text-gray-500 hover:text-gray-800 font-medium">← Poprzednia</button>
+                            <button onclick="nextFlashcard()" class="text-sm text-gray-500 hover:text-gray-800 font-medium">Następna →</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- More Questions Dialog (modal) -->
+            <div id="more-questions-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+                <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md mx-4">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4">Dodaj więcej pytań</h3>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Liczba pytań</label>
+                        <div class="flex gap-2" id="more-count-btns">
+                            <button onclick="selectMoreCount(5)" class="px-4 py-2 rounded-lg border text-sm font-medium hover:bg-gray-50 transition" data-count="5">5</button>
+                            <button onclick="selectMoreCount(10)" class="px-4 py-2 rounded-lg border text-sm font-medium bg-blue-50 border-blue-300 text-blue-700 transition" data-count="10">10</button>
+                            <button onclick="selectMoreCount(20)" class="px-4 py-2 rounded-lg border text-sm font-medium hover:bg-gray-50 transition" data-count="20">20</button>
+                        </div>
+                    </div>
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Trudność</label>
+                        <div class="flex gap-2" id="more-diff-btns">
+                            <button onclick="selectMoreDiff('easier')" class="px-4 py-2 rounded-lg border text-sm font-medium hover:bg-gray-50 transition" data-diff="easier">Łatwiejszy</button>
+                            <button onclick="selectMoreDiff('same')" class="px-4 py-2 rounded-lg border text-sm font-medium bg-blue-50 border-blue-300 text-blue-700 transition" data-diff="same">Taki sam</button>
+                            <button onclick="selectMoreDiff('harder')" class="px-4 py-2 rounded-lg border text-sm font-medium hover:bg-gray-50 transition" data-diff="harder">Trudniejszy</button>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-3">
+                        <button onclick="closeMoreDialog()" class="text-sm text-gray-500 hover:text-gray-800 font-medium">Anuluj</button>
+                        <button onclick="requestMoreQuestions()" id="btn-add-more" class="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition disabled:opacity-50">Dodaj pytania</button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Admin View -->
+        <div id="admin-view" class="hidden">
+            <button onclick="showView('dashboard')"
+                class="mb-4 text-sm text-gray-500 hover:text-gray-900 flex items-center gap-1">
+                ← Wróć do lekcji
+            </button>
+
+            <header class="mb-8">
+                <h1 class="text-3xl font-bold text-gray-900">Panel Administracyjny</h1>
+                <p class="text-gray-500">Zarządzaj użytkownikami platformy.</p>
+            </header>
+
+            <!-- Create User Form -->
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-8">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">Dodaj nowego ucznia</h2>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Nazwa użytkownika</label>
+                        <input type="text" id="new-username"
+                            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                            placeholder="jan.kowalski">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Hasło</label>
+                        <input type="text" id="new-password"
+                            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                            placeholder="min. 6 znaków">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Imię i nazwisko</label>
+                        <input type="text" id="new-fullname"
+                            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                            placeholder="Jan Kowalski">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Rola</label>
+                        <select id="new-role"
+                            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none bg-white">
+                            <option value="student">Uczeń</option>
+                            <option value="parent">Rodzic</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mt-4 flex items-center gap-3">
+                    <button id="create-user-btn" onclick="createUser()"
+                        class="bg-purple-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-purple-700 transition disabled:opacity-50">
+                        Dodaj użytkownika
+                    </button>
+                    <p id="admin-message" class="text-sm hidden"></p>
+                </div>
+            </div>
+
+            <!-- Users List -->
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-8">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">Lista użytkowników</h2>
+                <div id="users-list" class="overflow-x-auto">
+                    <div class="animate-pulse bg-gray-200 h-16 rounded-lg"></div>
+                </div>
+            </div>
+
+            <!-- Student Progress Panel -->
+            <div id="student-progress-panel" class="hidden bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-800">Postępy ucznia</h2>
+                        <p id="progress-student-name" class="text-sm text-gray-500"></p>
+                    </div>
+                    <button onclick="closeStudentProgress()" class="text-sm text-gray-400 hover:text-gray-700 font-medium">Zamknij &times;</button>
+                </div>
+                <div id="progress-content">
+                    <div class="animate-pulse bg-gray-200 h-24 rounded-lg"></div>
+                </div>
+            </div>
+
+            <!-- Lesson Edit Modal -->
+            <div id="lesson-edit-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+                <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg mx-4">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4">Edytuj lekcję</h3>
+                    <input type="hidden" id="edit-lesson-id">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Tytuł</label>
+                            <input type="text" id="edit-lesson-title"
+                                class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Opis</label>
+                            <textarea id="edit-lesson-desc" rows="3"
+                                class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none resize-none"></textarea>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-3 mt-5">
+                        <button onclick="closeLessonEditModal()" class="text-sm text-gray-500 hover:text-gray-800 font-medium">Anuluj</button>
+                        <button onclick="saveLesson()" id="btn-save-lesson" class="bg-purple-600 text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-purple-700 transition disabled:opacity-50">Zapisz</button>
+                    </div>
+                </div>
             </div>
         </div>
 
     </main>
 
-    <script src="/static/script.js?v=14"></script>
+    <script src="/static/script.js?v=22"></script>
 </body>
 
 </html>
