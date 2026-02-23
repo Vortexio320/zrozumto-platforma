@@ -29,10 +29,11 @@ class Question(BaseModel):
     pytanie: str
     odpowiedzi: List[str]
     poprawna: str
+    wyjasnienie: Optional[str] = None
 
 class QuizBase(BaseModel):
     lesson_id: UUID
-    questions_json: List[Question] # or Any if structure varies
+    questions_json: List[Question]
 
 class Quiz(QuizBase):
     id: UUID
@@ -40,4 +41,21 @@ class Quiz(QuizBase):
 
 class GenerateQuizRequest(BaseModel):
     lesson_id: UUID
-    # optional: difficulty, count, etc.
+
+class SubmitQuizResult(BaseModel):
+    answers: List[Optional[str]]
+
+class MoreQuestionsRequest(BaseModel):
+    count: int = 10
+    difficulty: str = "same"
+
+class Flashcard(BaseModel):
+    przod: str
+    tyl: str
+
+class AnalysisRequest(BaseModel):
+    answers: List[Optional[str]]
+
+class UpdateLessonRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None

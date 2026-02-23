@@ -29,6 +29,7 @@ async def ingest_lesson(
     files: List[UploadFile] = File(None),
     secret: str = Depends(verify_secret),
 ):
+    print(f"WEBHOOK: Received {len(files) if files else 0} files")
     print(f"WEBHOOK: Received ingestion request for: {student_username}, topic: {title}")
     supabase = get_supabase()
 
@@ -60,8 +61,7 @@ async def ingest_lesson(
         # 3. Create Lesson
         lesson_data = {
             "title": title,
-            "description": "Lekcja z automatyzacji (webhook)",
-            # "date": ... we could add date column later
+            "description": "Przetwarzanie materiałów...",
         }
         res_lesson = supabase.table("lessons").insert(lesson_data).execute()
         new_lesson = res_lesson.data[0]

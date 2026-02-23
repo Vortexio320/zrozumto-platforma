@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from ..dependencies import get_current_user, require_admin
-from ..services import get_supabase
-from ..schemas import CreateUserRequest
+from ..dependencies import require_admin
+from ..services import get_admin_supabase
+from ..schemas import CreateUserRequest, UpdateLessonRequest
 import os
 
 EMAIL_DOMAIN = os.environ.get("USER_EMAIL_DOMAIN", "zrozum-to.pl")
@@ -17,7 +17,7 @@ async def create_user(
     req: CreateUserRequest,
     admin = Depends(require_admin),
 ):
-    supabase = get_supabase()
+    supabase = get_admin_supabase()
     internal_email = f"{req.username}@{EMAIL_DOMAIN}"
 
     try:
@@ -42,8 +42,8 @@ async def create_user(
 
 @router.get("/users")
 async def list_users(admin = Depends(require_admin)):
-    supabase = get_supabase()
     try:
+        supabase = get_admin_supabase()
         response = supabase.table("profiles").select("id, username, full_name, role, created_at").execute()
         return response.data
     except Exception as e:
@@ -52,7 +52,7 @@ async def list_users(admin = Depends(require_admin)):
 
 @router.delete("/users/{username}")
 async def delete_user(username: str, admin = Depends(require_admin)):
-    supabase = get_supabase()
+    supabase = get_admin_supabase()
     internal_email = f"{username}@{EMAIL_DOMAIN}"
 
     try:
@@ -68,6 +68,102 @@ async def delete_user(username: str, admin = Depends(require_admin)):
 
         supabase.auth.admin.delete_user(str(user_id))
         return {"status": "success", "deleted": username}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/students/{student_id}/progress")
+async def get_student_progress(student_id: str, admin = Depends(require_admin)):
+    supabase = get_admin_supabase()
+    try:
+        profile = supabase.table("profiles").select("id, username, full_name, role").eq("id", student_id).single().execute()
+        student = profile.data
+
+        assignments = (
+            supabase.table("lesson_assignments")
+            .select("lesson_id")
+            .eq("student_id", student_id)
+            .execute()
+        )
+        lesson_ids = [a["lesson_id"] for a in assignments.data]
+        if not lesson_ids:
+            return {"student": student, "lessons": []}
+
+        lessons = (
+            supabase.table("lessons")
+            .select("id, title, description, created_at")
+            .in_("id", lesson_ids)
+            .execute()
+        )
+
+        quizzes = (
+            supabase.table("quizzes")
+            .select("id, lesson_id, questions_json, created_at")
+            .in_("lesson_id", lesson_ids)
+            .execute()
+        )
+        quiz_map = {}
+        quiz_ids = []
+        for q in quizzes.data:
+            quiz_map.setdefault(q["lesson_id"], []).append(q)
+            quiz_ids.append(q["id"])
+
+        results_map = {}
+        if quiz_ids:
+            results = (
+                supabase.table("quiz_results")
+                .select("id, quiz_id, score, max_score, details_json, completed_at")
+                .eq("user_id", student_id)
+                .in_("quiz_id", quiz_ids)
+                .order("completed_at", desc=True)
+                .execute()
+            )
+            for r in results.data:
+                results_map.setdefault(r["quiz_id"], []).append(r)
+
+        output = []
+        for lesson in lessons.data:
+            lid = lesson["id"]
+            lesson_quizzes = quiz_map.get(lid, [])
+            enriched_quizzes = []
+            for qz in lesson_quizzes:
+                enriched_quizzes.append({
+                    "id": qz["id"],
+                    "questions": qz.get("questions_json") or [],
+                    "question_count": len(qz.get("questions_json") or []),
+                    "created_at": qz["created_at"],
+                    "results": results_map.get(qz["id"], []),
+                })
+            output.append({
+                **lesson,
+                "quizzes": enriched_quizzes,
+            })
+
+        return {"student": student, "lessons": output}
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/lessons/{lesson_id}")
+async def update_lesson(lesson_id: str, req: UpdateLessonRequest, admin = Depends(require_admin)):
+    supabase = get_admin_supabase()
+    update_data = {}
+    if req.title is not None:
+        update_data["title"] = req.title
+    if req.description is not None:
+        update_data["description"] = req.description
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+
+    try:
+        res = supabase.table("lessons").update(update_data).eq("id", lesson_id).execute()
+        if not res.data:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+        return res.data[0]
     except HTTPException:
         raise
     except Exception as e:
