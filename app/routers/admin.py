@@ -158,6 +158,21 @@ async def get_student_progress(student_id: str, admin = Depends(require_admin)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.delete("/quizzes/{quiz_id}")
+async def delete_quiz(quiz_id: str, admin = Depends(require_admin)):
+    supabase = get_admin_supabase()
+    try:
+        supabase.table("quiz_results").delete().eq("quiz_id", quiz_id).execute()
+        res = supabase.table("quizzes").delete().eq("id", quiz_id).execute()
+        if not res.data:
+            raise HTTPException(status_code=404, detail="Quiz not found")
+        return {"status": "success", "deleted": quiz_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.patch("/lessons/{lesson_id}")
 async def update_lesson(lesson_id: str, req: UpdateLessonRequest, admin = Depends(require_admin)):
     supabase = get_admin_supabase()

@@ -107,22 +107,51 @@ async def more_questions(
 ):
     supabase = get_admin_supabase()
     try:
-        quiz_resp = supabase.table("quizzes").select("questions_json").eq("id", quiz_id).single().execute()
+        quiz_resp = supabase.table("quizzes").select("lesson_id, questions_json").eq("id", quiz_id).single().execute()
+        lesson_id = quiz_resp.data["lesson_id"]
         existing_questions = quiz_resp.data["questions_json"]
     except Exception:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
+    if not existing_questions or not isinstance(existing_questions, list):
+        raise HTTPException(status_code=400, detail="Quiz has no valid questions")
+
     try:
         raw = generate_more_questions(existing_questions, body.count, body.difficulty)
         clean = raw.replace("```json", "").replace("```", "").strip()
-        new_questions = json.loads(clean)
+        parsed = json.loads(clean)
+        print(f"More questions: AI returned type={type(parsed).__name__}, len={len(parsed) if isinstance(parsed, (list, dict)) else 'n/a'}")
+        # Normalize: AI may return array or object with "questions"/"pytania" key
+        if isinstance(parsed, list):
+            new_questions = parsed
+        elif isinstance(parsed, dict):
+            new_questions = parsed.get("questions") or parsed.get("pytania") or parsed.get("items")
+            if not isinstance(new_questions, list):
+                new_questions = [parsed] if parsed.get("pytanie") else []
+            if not new_questions:
+                raise ValueError("AI returned object without question array")
+        else:
+            raise ValueError("AI returned invalid format")
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"AI returned invalid JSON: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI generation failed: {e}")
 
-    merged = existing_questions + new_questions
-    supabase.table("quizzes").update({"questions_json": merged}).eq("id", quiz_id).execute()
+    if not new_questions:
+        raise HTTPException(status_code=500, detail="AI generated no questions")
 
-    return {"status": "success", "new_questions": new_questions, "total": len(merged)}
+    try:
+        new_quiz = {"lesson_id": lesson_id, "questions_json": new_questions}
+        res = supabase.table("quizzes").insert(new_quiz).execute()
+        if not res.data or len(res.data) == 0:
+            raise HTTPException(status_code=500, detail="Failed to save quiz")
+        new_id = str(res.data[0]["id"])
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+    return {"status": "success", "quiz": new_questions, "id": new_id}
 
 
 @router.post("/{quiz_id}/flashcards")
