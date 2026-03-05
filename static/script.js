@@ -124,6 +124,23 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
+function renderMath(element) {
+    if (!element) return;
+    try {
+        if (typeof renderMathInElement === 'function') {
+            renderMathInElement(element, {
+                delimiters: [
+                    { left: '$$', right: '$$', display: true },
+                    { left: '$', right: '$', display: false },
+                ],
+                throwOnError: false,
+            });
+        }
+    } catch (e) {
+        console.warn('KaTeX render failed:', e);
+    }
+}
+
 function hideAllQuizSections() {
     ['upload-section', 'quiz-taking', 'quiz-results', 'quiz-review', 'quiz-flashcards'].forEach(id => {
         document.getElementById(id).classList.add('hidden');
@@ -286,6 +303,7 @@ function renderQuestion() {
     });
     html += '</div>';
     area.innerHTML = html;
+    renderMath(area);
 
     const btnPrev = document.getElementById('btn-prev');
     const btnNext = document.getElementById('btn-next');
@@ -414,6 +432,7 @@ function showReview() {
         container.appendChild(card);
     });
 
+    renderMath(container);
     showQuizSection('quiz-review');
 }
 
@@ -539,6 +558,7 @@ function renderFlashcard() {
         </div>
         <p class="text-xs text-gray-400 text-center mt-2">Kliknij kartę, aby obrócić</p>
     `;
+    renderMath(document.getElementById('flashcard-card'));
 }
 
 function nextFlashcard() {
@@ -581,6 +601,7 @@ async function loadAnalysis() {
 
         if (html) {
             content.innerHTML = html;
+            renderMath(content);
             section.classList.remove('hidden');
         }
     } catch (e) {
@@ -927,6 +948,7 @@ function showAdminAttemptReview(quizDomId, lessonIdx, qzIdx, resultIdx) {
 
     html += '</div>';
     container.innerHTML = html;
+    renderMath(container);
 }
 
 function closeStudentProgress() {

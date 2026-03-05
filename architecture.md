@@ -20,6 +20,7 @@
 |-------------|--------------|
 | **Vanilla JavaScript** | Aplikacja SPA bez frameworka |
 | **Tailwind CSS** (CDN) | Stylowanie |
+| **KaTeX** (CDN) | Renderowanie formuł LaTeX w quizach, fiszkach, przeglądzie |
 | **Inter** (Google Fonts) | Typografia |
 
 ### Baza danych
@@ -163,6 +164,12 @@ zrozumto-platforma/
 | **Analysis** | `generate_analysis(questions, answers)` → JSON (mocne_strony, obszary_do_poprawy, wskazowki) |
 | **Flashcards** | `generate_flashcards(questions)` → tablica `[{przod, tyl}]` |
 | **More questions** | `generate_more_questions(existing, count, difficulty)` → dołączenie do quizu |
+
+### 3.6a LaTeX w quizach
+
+Wszystkie prompty Gemini instruują model, aby wyrażenia matematyczne zapisywać w notacji LaTeX (`$...$` inline, `$$...$$` display).
+Frontend używa KaTeX auto-render (`renderMath()`) do kompilacji LaTeX po każdym wstrzyknięciu treści quizu/fiszek/przeglądu do DOM.
+Przepływ: Gemini → JSON z LaTeX → `escapeHtml()` (zachowuje `$`, `\`) → innerHTML → `renderMathInElement()` → wyrenderowane wzory.
 
 ### 3.6 Autoryzacja
 
