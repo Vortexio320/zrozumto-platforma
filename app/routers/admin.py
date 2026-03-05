@@ -31,9 +31,20 @@ async def create_user(
                 "role": req.role,
             }
         })
+        user_id = str(res.user.id)
+        # Ensure profile exists with correct username (webhook lookup relies on profiles.username)
+        supabase.table("profiles").upsert(
+            {
+                "id": user_id,
+                "username": req.username,
+                "full_name": req.full_name or req.username,
+                "role": req.role,
+            },
+            on_conflict="id",
+        ).execute()
         return {
             "status": "success",
-            "user_id": str(res.user.id),
+            "user_id": user_id,
             "username": req.username,
         }
     except Exception as e:
@@ -53,18 +64,18 @@ async def list_users(admin = Depends(require_admin)):
 @router.delete("/users/{username}")
 async def delete_user(username: str, admin = Depends(require_admin)):
     supabase = get_admin_supabase()
-    internal_email = f"{username}@{EMAIL_DOMAIN}"
 
     try:
-        users_response = supabase.auth.admin.list_users()
-        user_id = None
-        for user in users_response:
-            if user.email == internal_email:
-                user_id = user.id
-                break
-
-        if not user_id:
+        # Look up by profiles table (avoids list_users pagination limit of 50)
+        profile = supabase.table("profiles").select("id").eq("username", username).maybe_single().execute()
+        if not profile.data:
             raise HTTPException(status_code=404, detail=f"User '{username}' not found")
+        user_id = profile.data["id"]
+
+        # Delete dependent rows first (avoids FK constraint when deleting auth user)
+        supabase.table("quiz_results").delete().eq("user_id", user_id).execute()
+        supabase.table("lesson_assignments").delete().eq("student_id", user_id).execute()
+        supabase.table("profiles").delete().eq("id", user_id).execute()
 
         supabase.auth.admin.delete_user(str(user_id))
         return {"status": "success", "deleted": username}

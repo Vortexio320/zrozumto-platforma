@@ -54,13 +54,22 @@ def generate_quiz_content(file_paths: list[str]):
         4. Pytania powinny nawiązywać do treści z nagrania i zdjęć.
         5. Każde pytanie MUSI zawierać pole "wyjasnienie" z krótkim uzasadnieniem poprawnej odpowiedzi.
 
+        WAŻNE - Formatowanie matematyczne (LaTeX):
+        - Wszystkie wyrażenia matematyczne, wzory, liczby w kontekście matematycznym, równania, ułamki, potęgi, pierwiastki itp. MUSZĄ być zapisane w notacji LaTeX.
+        - Użyj $...$ dla wyrażeń w linii tekstu, np. $x^2 + 3x - 5$, $\\frac{1}{2}$, $\\sqrt{16}$, $2x + 3 = 7$.
+        - Zwykły tekst opisowy (bez matematyki) zapisuj normalnie, BEZ znaczników LaTeX.
+        - Przykłady poprawnego zapisu:
+          - pytanie: "Ile wynosi $\\frac{3}{4} + \\frac{1}{2}$?"
+          - odpowiedź: "A) $\\frac{5}{4}$"
+          - wyjasnienie: "Sprowadzamy do wspólnego mianownika: $\\frac{3}{4} + \\frac{2}{4} = \\frac{5}{4}$"
+
         Wzór JSON:
         [
           {
-            "pytanie": "Treść pytania...",
-            "odpowiedzi": ["A) odpowiedź", "B) odpowiedź", "C) odpowiedź", "D) odpowiedź"],
-            "poprawna": "A) odpowiedź",
-            "wyjasnienie": "Poprawna odpowiedź to A, ponieważ..."
+            "pytanie": "Treść pytania z $wyrażeniem LaTeX$...",
+            "odpowiedzi": ["A) $wzór$", "B) $wzór$", "C) $wzór$", "D) $wzór$"],
+            "poprawna": "A) $wzór$",
+            "wyjasnienie": "Poprawna odpowiedź to A, ponieważ $wzór$..."
           }
         ]
         """
@@ -153,13 +162,18 @@ def generate_more_questions(quiz_context: list[dict], count: int = 10, difficult
     NIE powtarzaj istniejących pytań.
     Język polski. Format: CZYSTY JSON.
 
+    WAŻNE - Formatowanie matematyczne (LaTeX):
+    - Wszystkie wyrażenia matematyczne, wzory, liczby w kontekście matematycznym, równania, ułamki, potęgi, pierwiastki itp. MUSZĄ być zapisane w notacji LaTeX.
+    - Użyj $...$ dla wyrażeń w linii tekstu, np. $x^2 + 3x - 5$, $\\frac{{1}}{{2}}$, $\\sqrt{{16}}$.
+    - Zwykły tekst opisowy zapisuj normalnie, BEZ znaczników LaTeX.
+
     Wzór JSON:
     [
       {{
-        "pytanie": "Treść pytania...",
-        "odpowiedzi": ["A) odpowiedź", "B) odpowiedź", "C) odpowiedź", "D) odpowiedź"],
-        "poprawna": "A) odpowiedź",
-        "wyjasnienie": "Poprawna odpowiedź to A, ponieważ..."
+        "pytanie": "Treść pytania z $wyrażeniem LaTeX$...",
+        "odpowiedzi": ["A) $wzór$", "B) $wzór$", "C) $wzór$", "D) $wzór$"],
+        "poprawna": "A) $wzór$",
+        "wyjasnienie": "Poprawna odpowiedź to A, ponieważ $wzór$..."
       }}
     ]
     """
@@ -182,11 +196,16 @@ def generate_flashcards(quiz_context: list[dict]) -> str:
     3. Fiszki powinny pokrywać najważniejsze pojęcia z lekcji.
     4. Język polski. Format: CZYSTY JSON.
 
+    WAŻNE - Formatowanie matematyczne (LaTeX):
+    - Wszystkie wyrażenia matematyczne, wzory, równania itp. MUSZĄ być zapisane w notacji LaTeX.
+    - Użyj $...$ dla wyrażeń w linii tekstu, np. $x^2$, $\\frac{{1}}{{2}}$, $\\sqrt{{16}}$.
+    - Zwykły tekst opisowy zapisuj normalnie, BEZ znaczników LaTeX.
+
     Wzór JSON:
     [
       {{
-        "przod": "Czym jest...?",
-        "tyl": "To jest..."
+        "przod": "Czym jest $wyrażenie$?",
+        "tyl": "To jest $wzór$..."
       }}
     ]
     """
@@ -221,5 +240,6 @@ def generate_analysis(questions: list[dict], user_answers: list) -> str:
     }}
 
     Bądź konstruktywny i motywujący. Format: CZYSTY JSON.
+    Jeśli odwołujesz się do wzorów lub wyrażeń matematycznych, użyj notacji LaTeX w $...$ (np. $x^2$, $\\frac{{1}}{{2}}$).
     """
     return _call_gemini_json(prompt)

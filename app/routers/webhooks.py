@@ -4,7 +4,7 @@ import os
 import shutil
 import uuid
 from datetime import datetime
-from ..services import get_supabase
+from ..services import get_admin_supabase
 from ..worker import process_ingested_content
 
 router = APIRouter(
@@ -31,7 +31,7 @@ async def ingest_lesson(
 ):
     print(f"WEBHOOK: Received {len(files) if files else 0} files")
     print(f"WEBHOOK: Received ingestion request for: {student_username}, topic: {title}")
-    supabase = get_supabase()
+    supabase = get_admin_supabase()
 
     user_id = None
     try:
