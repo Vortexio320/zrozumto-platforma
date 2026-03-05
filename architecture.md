@@ -18,9 +18,11 @@
 ### Frontend
 | Technologia | Zastosowanie |
 |-------------|--------------|
-| **Vanilla JavaScript** | Aplikacja SPA bez frameworka |
-| **Tailwind CSS** (CDN) | Stylowanie |
-| **KaTeX** (CDN) | Renderowanie formuł LaTeX w quizach, fiszkach, przeglądzie |
+| **React 19** | Biblioteka UI (SPA) |
+| **TypeScript** | Typowanie statyczne |
+| **Vite 6** | Bundler i dev server |
+| **Tailwind CSS 4** | Stylowanie (PostCSS) |
+| **KaTeX** | Renderowanie wzorów matematycznych |
 | **Inter** (Google Fonts) | Typografia |
 
 ### Baza danych
@@ -55,9 +57,21 @@ zrozumto-platforma/
 │       ├── quizzes.py       # Generowanie quizów, wyniki, fiszki, analiza
 │       ├── admin.py         # Użytkownicy, postępy uczniów, edycja lekcji
 │       └── webhooks.py      # Integracja z n8n (ingest)
-├── static/
-│   ├── index.html           # UI SPA
-│   └── script.js            # Logika klienta
+├── frontend/
+│   ├── src/
+│   │   ├── main.tsx             # Entry point
+│   │   ├── App.tsx              # Główny komponent (routing widoków)
+│   │   ├── index.css            # Tailwind + style flip-card
+│   │   ├── api/client.ts        # Wrapper fetch z auth headers
+│   │   ├── context/AuthContext.tsx # React Context (token, user, login/logout)
+│   │   ├── types/index.ts       # Interfejsy TypeScript (Lesson, Quiz, User...)
+│   │   ├── components/          # Navbar, MathContent, Spinner, quiz sub-views
+│   │   └── views/               # LoginView, DashboardView, LessonView, AdminView
+│   ├── index.html               # Vite entry HTML
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── tsconfig.json
+├── static/                      # Vite build output (generowany, nie edytować)
 ├── setup_db.sql             # Schemat Supabase i RLS
 ├── requirements.txt
 ├── docker-compose.yml
@@ -101,23 +115,25 @@ zrozumto-platforma/
 | `/quizzes/{lesson_id}` | GET | Quizy do lekcji |
 | `/quizzes/generate` | POST | Generowanie quizu z pliku |
 | `/quizzes/{id}/results` | POST | Zapis odpowiedzi i wyniku |
-| `/quizzes/{id}/more` | POST | Generowanie dodatkowych pytań |
+| `/quizzes/{id}/more` | POST | Tworzenie nowego quizu z dodatkowymi pytaniami (na podstawie istniejącego) |
 | `/quizzes/{id}/flashcards` | POST | Generowanie fiszek |
 | `/quizzes/{id}/analysis` | POST | Analiza AI odpowiedzi |
 | `/admin/users` | GET/POST | Lista/tworzenie użytkowników |
 | `/admin/users/{username}` | DELETE | Usunięcie użytkownika |
+| `/admin/quizzes/{quiz_id}` | DELETE | Usunięcie quizu (admin, usuwa też quiz_results) |
 | `/admin/students/{id}/progress` | GET | Postępy ucznia (lekcje, quizy, wyniki) |
 | `/admin/lessons/{id}` | PATCH | Edycja tytułu/opisu lekcji |
 | `/webhooks/ingest` | POST | Webhook n8n (tworzenie lekcji + przetwarzanie w tle) |
 
-### 3.4 Stan frontendu
+### 3.4 Stan frontendu (React)
 
-| Stan | Opis |
-|------|------|
-| **Session** | `accessToken`, `currentUserInfo` (też w sessionStorage) |
-| **Quiz** | `quizState` – pytania, quizId, currentIndex, answers, submitted |
-| **Dialogi** | `moreOpts` (count, difficulty), `flashcardState` (karty, index) |
-| **Widoki** | `login`, `dashboard`, `lesson`, `admin` |
+| Warstwa | Mechanizm | Opis |
+|---------|-----------|------|
+| **Auth** | `AuthContext` (React Context) | `token`, `user`, `login()`, `logout()` – persystowane w sessionStorage |
+| **Widoki** | `App.tsx` useState | `View` union type: `dashboard`, `lesson(Lesson)`, `admin` |
+| **Quiz flow** | `LessonView` local state | `subView`, `activeQuestions`, `activeQuizId`, `resultAnswers` |
+| **Komponenty** | Local useState w komponentach | Flashcards index, more-questions count/difficulty, form inputs |
+| **API** | `api/client.ts` | Centralized `fetch` wrapper z auto-auth i obsługą 401 |
 
 ### 3.5 Przykładowe przepływy
 
@@ -129,6 +145,16 @@ zrozumto-platforma/
 3. RLS ogranicza lekcje do przypisanych
 ```
 
+#### Lekcja → Lista quizów
+
+```
+1. Użytkownik klika lekcję → openLesson(lesson)
+2. GET /quizzes/{lesson_id} zwraca tablicę quizów
+3. Jeśli quizy istnieją: pokazana lista quizów (quiz-list-section)
+4. Jeśli brak quizów: pokazana sekcja uploadu
+5. Przy pierwszym wejściu (webhook/ingest): worker tworzy 1 quiz → uczeń widzi 1 pozycję
+```
+
 #### Generowanie quizu (upload użytkownika)
 
 ```
@@ -137,6 +163,16 @@ zrozumto-platforma/
 3. Backend zapisuje plik tymczasowo, wywołuje generate_quiz_content() (Gemini)
 4. Wynik zapisywany w quizzes, odpowiedź zwraca dane quizu
 5. Frontend przełącza na widok quizu
+```
+
+#### Więcej pytań → nowy quiz
+
+```
+1. Uczeń kończy quiz, klika „Więcej pytań” → wybiera liczbę i trudność
+2. POST /quizzes/{quiz_id}/more z { count, difficulty }
+3. Backend: generate_more_questions() → tworzy NOWY wiersz w quizzes (ten sam lesson_id)
+4. Zwraca { quiz, id } – nowy quiz z samymi nowymi pytaniami
+5. Frontend startQuiz(data.quiz, data.id) – uczeń rozwiązuje tylko nowe pytania
 ```
 
 #### Webhook (n8n → backend)
@@ -163,13 +199,7 @@ zrozumto-platforma/
 |---------|------|
 | **Analysis** | `generate_analysis(questions, answers)` → JSON (mocne_strony, obszary_do_poprawy, wskazowki) |
 | **Flashcards** | `generate_flashcards(questions)` → tablica `[{przod, tyl}]` |
-| **More questions** | `generate_more_questions(existing, count, difficulty)` → dołączenie do quizu |
-
-### 3.6a LaTeX w quizach
-
-Wszystkie prompty Gemini instruują model, aby wyrażenia matematyczne zapisywać w notacji LaTeX (`$...$` inline, `$$...$$` display).
-Frontend używa KaTeX auto-render (`renderMath()`) do kompilacji LaTeX po każdym wstrzyknięciu treści quizu/fiszek/przeglądu do DOM.
-Przepływ: Gemini → JSON z LaTeX → `escapeHtml()` (zachowuje `$`, `\`) → innerHTML → `renderMathInElement()` → wyrenderowane wzory.
+| **More questions** | `generate_more_questions(existing, count, difficulty)` → nowe pytania; endpoint tworzy nowy quiz |
 
 ### 3.6 Autoryzacja
 

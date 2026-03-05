@@ -1,0 +1,40 @@
+@import "tailwindcss";
+@import "katex/dist/katex.min.css";
+
+body {
+  font-family: 'Inter', sans-serif;
+}
+
+.flip-card {
+  perspective: 600px;
+  cursor: pointer;
+}
+
+.flip-card-inner {
+  position: relative;
+  width: 100%;
+  min-height: 160px;
+  transition: transform 0.5s;
+  transform-style: preserve-3d;
+}
+
+.flip-card.flipped .flip-card-inner {
+  transform: rotateY(180deg);
+}
+
+.flip-card-front,
+.flip-card-back {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  border-radius: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.flip-card-back {
+  transform: rotateY(180deg);
+}

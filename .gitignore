@@ -209,3 +209,7 @@ __marimo__/
 # Git filter-repo replacements (contains sensitive data)
 replacements.txt
 supabase_redact.txt
+
+# Frontend
+frontend/node_modules/
+static/

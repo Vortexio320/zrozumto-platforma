@@ -49,9 +49,17 @@ async def get_config():
         raise HTTPException(status_code=500, detail="Supabase config not configured")
     return {"supabaseUrl": url, "supabaseAnonKey": anon_key}
 
-# Mount static files at /static (after /api routes)
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+# Mount static assets (Vite outputs JS/CSS to static/assets/)
+app.mount("/assets", StaticFiles(directory=str(STATIC_DIR / "assets")), name="assets")
 
+# Serve index.html for the root and any non-API paths (SPA fallback)
 @app.get("/")
 async def read_root():
+    return FileResponse(str(STATIC_DIR / "index.html"))
+
+@app.get("/{path:path}")
+async def spa_fallback(path: str):
+    file_path = STATIC_DIR / path
+    if file_path.is_file():
+        return FileResponse(str(file_path))
     return FileResponse(str(STATIC_DIR / "index.html"))

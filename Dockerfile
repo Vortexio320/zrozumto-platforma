@@ -1,26 +1,30 @@
-# Use an official Python runtime as a parent image
+# Stage 1: Build React frontend
+FROM node:22-slim AS frontend-build
+WORKDIR /build
+COPY frontend/package.json frontend/package-lock.json ./frontend/
+RUN cd frontend && npm ci
+COPY frontend/ ./frontend/
+RUN cd frontend && npm run build
+# Vite outputs to /build/static (outDir: '../static')
+
+# Stage 2: Python runtime
 FROM python:3.11-slim
 
-# Set the working directory in the container
 WORKDIR /app
 
-# Install system dependencies (e.g., for build tools or database drivers if needed)
-# libpq-dev is often needed for psycopg2 (PostgreSQL adapter), though we use supabase-py (httpx based) it's good to have basic tools.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the requirements file into the container
 COPY requirements.txt .
-
-# Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the current directory contents into the container at /app
-COPY . .
+COPY app/ ./app/
+COPY README.md ./
 
-# Make port 8000 available to the world outside this container
+# Copy Vite build output as the static directory
+COPY --from=frontend-build /build/static ./static
+
 EXPOSE 8000
 
-# Run app.main:app when the container launches
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
