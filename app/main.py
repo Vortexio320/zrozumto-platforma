@@ -1,13 +1,24 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from .routers import lessons, quizzes, auth, webhooks, admin
+from .neo4j import init_neo4j, close_neo4j, get_neo4j
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-app = FastAPI(title="ZrozumTo Platforma", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_neo4j()
+    yield
+    close_neo4j()
+
+
+app = FastAPI(title="ZrozumTo Platforma", version="0.1.0", lifespan=lifespan)
 
 # CORS (Allow frontend to communicate)
 _cors_origins = os.environ.get(
@@ -39,6 +50,18 @@ from fastapi.responses import FileResponse
 # Define Base Dir
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
+
+# Health: Neo4j status (no auth)
+@app.get("/api/neo4j/status")
+async def neo4j_status():
+    driver = get_neo4j()
+    if not driver:
+        return {"connected": False, "message": "Neo4j not configured"}
+    try:
+        driver.verify_connectivity()
+        return {"connected": True}
+    except Exception as e:
+        return {"connected": False, "message": str(e)}
 
 # Config endpoint for frontend (Supabase anon key - no auth required)
 @app.get("/api/config")
