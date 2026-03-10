@@ -213,3 +213,6 @@ supabase_redact.txt
 # Frontend
 frontend/node_modules/
 static/
+
+neo4j_schema.md
+supabase_schema.md
