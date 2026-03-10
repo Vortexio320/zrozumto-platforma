@@ -7,3 +7,4 @@ google-genai
 pydantic
 httpx
 requests
+neo4j

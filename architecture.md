@@ -13,6 +13,7 @@
 | **google-genai** | Integracja z Google Gemini (quizy, fiszki, analiza) |
 | **python-dotenv** | Zmienne środowiskowe |
 | **httpx** | Klient HTTP |
+| **neo4j** | Klient Neo4j (graf wiedzy) |
 | **python-multipart** | Obsługa uploadu plików |
 
 ### Frontend
@@ -30,12 +31,13 @@
 |-------------|--------------|
 | **Supabase (PostgreSQL)** | Główna baza danych |
 | **Row Level Security (RLS)** | Kontrola dostępu |
+| **Neo4j** | Graf wiedzy (opcjonalnie: koncepty, powiązania między lekcjami) |
 
 ### Infrastruktura
 | Technologia | Zastosowanie |
 |-------------|--------------|
 | **Docker** | Konteneryzacja |
-| **Docker Compose** | Serwisy web + n8n |
+| **Docker Compose** | Serwisy web + n8n + Neo4j |
 | **n8n** | Automatyzacja i webhooki |
 
 ---
@@ -48,6 +50,7 @@ zrozumto-platforma/
 │   ├── main.py              # Aplikacja FastAPI, CORS, routing, serwowanie statyków
 │   ├── ai.py                # Integracja z Gemini (quizy, fiszki, analiza)
 │   ├── services.py          # Klient Supabase
+│   ├── neo4j.py             # Klient Neo4j (driver, init, dependency)
 │   ├── schemas.py           # Modele Pydantic
 │   ├── dependencies.py      # Autentykacja (Bearer, admin)
 │   ├── worker.py            # Zadania w tle (przetwarzanie webhooków)
@@ -219,6 +222,10 @@ zrozumto-platforma/
 │  (static)   │     │   (app/)    │     │ (Postgres)  │
 └─────────────┘     └──────┬──────┘     └─────────────┘
        │                   │
+       │                   ├──────────▶┌─────────────┐
+       │                   │           │    Neo4j     │
+       │                   │           │   (graf)    │
+       │                   │           └─────────────┘
        │                   │
        │                   ▼
        │            ┌─────────────┐
