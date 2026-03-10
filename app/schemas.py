@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Any
 from uuid import UUID
 from datetime import datetime
@@ -14,6 +14,13 @@ class CreateUserRequest(BaseModel):
     password: str
     full_name: Optional[str] = None
     role: str = "student"
+    school_type: Optional[str] = None  # "liceum" | "podstawowka"
+    class_: Optional[str] = Field(None, alias="class")
+
+
+class UpdateStudentRequest(BaseModel):
+    school_type: Optional[str] = None  # "liceum" | "podstawowka"
+    class_: Optional[str] = Field(None, alias="class")
 
 class LessonBase(BaseModel):
     title: str

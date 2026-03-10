@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from ..dependencies import require_admin
 from ..services import get_admin_supabase
-from ..schemas import CreateUserRequest, UpdateLessonRequest
+from ..schemas import CreateUserRequest, UpdateLessonRequest, UpdateStudentRequest
 import os
 
 EMAIL_DOMAIN = os.environ.get("USER_EMAIL_DOMAIN", "zrozum-to.pl")
@@ -32,16 +32,18 @@ async def create_user(
             }
         })
         user_id = str(res.user.id)
+        profile_data = {
+            "id": user_id,
+            "username": req.username,
+            "full_name": req.full_name or req.username,
+            "role": req.role,
+        }
+        if req.school_type is not None:
+            profile_data["school_type"] = req.school_type
+        if req.class_ is not None:
+            profile_data["class"] = req.class_
         # Ensure profile exists with correct username (webhook lookup relies on profiles.username)
-        supabase.table("profiles").upsert(
-            {
-                "id": user_id,
-                "username": req.username,
-                "full_name": req.full_name or req.username,
-                "role": req.role,
-            },
-            on_conflict="id",
-        ).execute()
+        supabase.table("profiles").upsert(profile_data, on_conflict="id").execute()
         return {
             "status": "success",
             "user_id": user_id,
@@ -55,8 +57,35 @@ async def create_user(
 async def list_users(admin = Depends(require_admin)):
     try:
         supabase = get_admin_supabase()
-        response = supabase.table("profiles").select("id, username, full_name, role, created_at").execute()
+        response = supabase.table("profiles").select(
+            "id, username, full_name, role, school_type, class, created_at"
+        ).execute()
         return response.data
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/users/{user_id}")
+async def update_student(
+    user_id: str,
+    req: UpdateStudentRequest,
+    admin=Depends(require_admin),
+):
+    supabase = get_admin_supabase()
+    # Use exclude_unset so we only update fields that were explicitly sent (including null)
+    sent = req.model_dump(exclude_unset=True, by_alias=True)
+    update_data = {k: v for k, v in sent.items() if k in ("school_type", "class")}
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+
+    try:
+        res = supabase.table("profiles").update(update_data).eq("id", user_id).execute()
+        if not res.data:
+            raise HTTPException(status_code=404, detail="User not found")
+        return res.data[0]
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -89,7 +118,9 @@ async def delete_user(username: str, admin = Depends(require_admin)):
 async def get_student_progress(student_id: str, admin = Depends(require_admin)):
     supabase = get_admin_supabase()
     try:
-        profile = supabase.table("profiles").select("id, username, full_name, role").eq("id", student_id).single().execute()
+        profile = supabase.table("profiles").select(
+            "id, username, full_name, role, school_type, class"
+        ).eq("id", student_id).single().execute()
         student = profile.data
 
         assignments = (

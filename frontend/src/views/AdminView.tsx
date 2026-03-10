@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { apiGet, apiPost, apiDelete } from '../api/client';
+import { apiGet, apiPost, apiPatch, apiDelete } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import StudentProgressPanel from '../components/StudentProgressPanel';
 import type { AdminUser } from '../types';
@@ -20,6 +20,20 @@ const ROLE_COLORS: Record<string, string> = {
   student: 'bg-blue-100 text-blue-600',
 };
 
+const SCHOOL_TYPES = [
+  { value: 'liceum', label: 'Liceum' },
+  { value: 'podstawowka', label: 'Podstawówka' },
+] as const;
+
+const LICEUM_GRADES = ['1', '2', '3', '4'];
+const PODSTAWOWKA_GRADES = ['4', '5', '6', '7', '8'];
+
+function getClassOptions(schoolType: string | undefined): string[] {
+  if (schoolType === 'liceum') return LICEUM_GRADES;
+  if (schoolType === 'podstawowka') return PODSTAWOWKA_GRADES;
+  return [];
+}
+
 export default function AdminView({ onBack }: AdminViewProps) {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -34,7 +48,12 @@ export default function AdminView({ onBack }: AdminViewProps) {
   const [newPassword, setNewPassword] = useState('');
   const [newFullname, setNewFullname] = useState('');
   const [newRole, setNewRole] = useState('student');
+  const [newSchoolType, setNewSchoolType] = useState<'liceum' | 'podstawowka' | ''>('');
+  const [newClass, setNewClass] = useState('');
   const [creating, setCreating] = useState(false);
+
+  // Inline edit (updating student)
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
 
   // Student progress
   const [progressStudent, setProgressStudent] = useState<{
@@ -79,12 +98,16 @@ export default function AdminView({ onBack }: AdminViewProps) {
         password: newPassword,
         full_name: newFullname.trim() || null,
         role: newRole,
+        school_type: newSchoolType || undefined,
+        class: newClass || undefined,
       });
       showMessage(`Dodano użytkownika "${newUsername.trim()}".`, false);
       setNewUsername('');
       setNewPassword('');
       setNewFullname('');
       setNewRole('student');
+      setNewSchoolType('');
+      setNewClass('');
       loadUsers();
     } catch (e) {
       showMessage(
@@ -93,6 +116,29 @@ export default function AdminView({ onBack }: AdminViewProps) {
       );
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function updateStudent(
+    userId: string,
+    schoolType?: string,
+    cls?: string | null,
+  ) {
+    setUpdatingUserId(userId);
+    try {
+      const body: { school_type?: string; class?: string | null } = {};
+      if (schoolType !== undefined) body.school_type = schoolType || undefined;
+      if (cls !== undefined) body.class = cls || undefined;
+      await apiPatch(`/admin/users/${userId}`, body);
+      showMessage('Zaktualizowano dane ucznia.', false);
+      loadUsers();
+    } catch (e) {
+      showMessage(
+        e instanceof Error ? e.message : 'Błąd aktualizacji.',
+        true,
+      );
+    } finally {
+      setUpdatingUserId(null);
     }
   }
 
@@ -177,7 +223,13 @@ export default function AdminView({ onBack }: AdminViewProps) {
             </label>
             <select
               value={newRole}
-              onChange={e => setNewRole(e.target.value)}
+              onChange={e => {
+                setNewRole(e.target.value);
+                if (e.target.value !== 'student') {
+                  setNewSchoolType('');
+                  setNewClass('');
+                }
+              }}
               className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none bg-white"
             >
               <option value="student">Uczeń</option>
@@ -185,6 +237,44 @@ export default function AdminView({ onBack }: AdminViewProps) {
               <option value="admin">Admin</option>
             </select>
           </div>
+          {newRole === 'student' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Typ szkoły
+                </label>
+                <select
+                  value={newSchoolType}
+                  onChange={e => {
+                    setNewSchoolType(e.target.value as 'liceum' | 'podstawowka' | '');
+                    setNewClass('');
+                  }}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none bg-white"
+                >
+                  <option value="">— wybierz —</option>
+                  {SCHOOL_TYPES.map(t => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Klasa
+                </label>
+                <select
+                  value={newClass}
+                  onChange={e => setNewClass(e.target.value)}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none bg-white"
+                  disabled={!newSchoolType}
+                >
+                  <option value="">— wybierz —</option>
+                  {getClassOptions(newSchoolType || undefined).map(g => (
+                    <option key={g} value={g}>{g}. klasa</option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
         </div>
         <div className="mt-4 flex items-center gap-3">
           <button
@@ -221,6 +311,8 @@ export default function AdminView({ onBack }: AdminViewProps) {
                   <th className="py-2 pr-4">Użytkownik</th>
                   <th className="py-2 pr-4">Imię i nazwisko</th>
                   <th className="py-2 pr-4">Rola</th>
+                  <th className="py-2 pr-4">Typ szkoły</th>
+                  <th className="py-2 pr-4">Klasa</th>
                   <th className="py-2 pr-4">Utworzony</th>
                   <th className="py-2" />
                 </tr>
@@ -262,6 +354,43 @@ export default function AdminView({ onBack }: AdminViewProps) {
                         >
                           {ROLE_LABELS[u.role] || u.role}
                         </span>
+                      </td>
+                      <td className="py-3 pr-4" onClick={e => isStudent && e.stopPropagation()}>
+                        {isStudent ? (
+                          <select
+                            value={u.school_type || ''}
+                            onChange={e => {
+                              const val = e.target.value as 'liceum' | 'podstawowka' | '';
+                              updateStudent(u.id, val || undefined, null);
+                            }}
+                            disabled={updatingUserId === u.id}
+                            className="text-sm border rounded px-2 py-1 bg-white min-w-[110px]"
+                          >
+                            <option value="">—</option>
+                            {SCHOOL_TYPES.map(t => (
+                              <option key={t.value} value={t.value}>{t.label}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="py-3 pr-4" onClick={e => isStudent && e.stopPropagation()}>
+                        {isStudent ? (
+                          <select
+                            value={u.class || ''}
+                            onChange={e => updateStudent(u.id, u.school_type, e.target.value || undefined)}
+                            disabled={updatingUserId === u.id || !u.school_type}
+                            className="text-sm border rounded px-2 py-1 bg-white min-w-[90px]"
+                          >
+                            <option value="">—</option>
+                            {getClassOptions(u.school_type).map(g => (
+                              <option key={g} value={g}>{g}. klasa</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
                       </td>
                       <td className="py-3 pr-4 text-gray-500">{date}</td>
                       <td className="py-3 text-right">

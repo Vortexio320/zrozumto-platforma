@@ -96,9 +96,13 @@ zrozumto-platforma/
 
 ### 3.2 Modele danych (Supabase)
 
+**profiles** – pola `school_type` i `class` (dla uczniów):
+- `school_type`: `'liceum'` | `'podstawowka'`
+- `class`: klasa – Liceum: 1–4, Podstawówka: 4–8
+
 | Tabela | Opis |
 |--------|------|
-| **profiles** | Rozszerzenie auth.users (username, role, full_name) |
+| **profiles** | Rozszerzenie auth.users (username, role, full_name, school_type, class) |
 | **lessons** | title, description, file_url, transcript |
 | **lesson_assignments** | Przypisania lekcji do uczniów |
 | **quizzes** | lesson_id, questions_json (tablica pytań) |
@@ -122,6 +126,7 @@ zrozumto-platforma/
 | `/quizzes/{id}/flashcards` | POST | Generowanie fiszek |
 | `/quizzes/{id}/analysis` | POST | Analiza AI odpowiedzi |
 | `/admin/users` | GET/POST | Lista/tworzenie użytkowników |
+| `/admin/users/{user_id}` | PATCH | Aktualizacja ucznia (school_type, class) |
 | `/admin/users/{username}` | DELETE | Usunięcie użytkownika |
 | `/admin/quizzes/{quiz_id}` | DELETE | Usunięcie quizu (admin, usuwa też quiz_results) |
 | `/admin/students/{id}/progress` | GET | Postępy ucznia (lekcje, quizy, wyniki) |

@@ -65,6 +65,8 @@ export interface AdminUser {
   username: string;
   full_name?: string;
   role: string;
+  school_type?: 'liceum' | 'podstawowka';
+  class?: string;
   created_at?: string;
 }
 
