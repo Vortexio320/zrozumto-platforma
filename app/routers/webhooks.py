@@ -3,9 +3,13 @@ from typing import List, Optional
 import os
 import shutil
 import uuid
+import zipfile
 from datetime import datetime
 from ..services import get_admin_supabase
 from ..worker import process_ingested_content
+
+MAX_ZIP_FILES = 20
+SKIP_PREFIXES = ("__MACOSX", ".")
 
 router = APIRouter(
     prefix="/webhooks",
@@ -25,7 +29,8 @@ async def verify_secret(x_webhook_secret: str = Header(...)):
 async def ingest_lesson(
     background_tasks: BackgroundTasks,
     student_username: str = Form(...),
-    title: str = Form(...),
+    title: Optional[str] = Form(None),
+    lesson_date: Optional[str] = Form(None),
     files: List[UploadFile] = File(None),
     secret: str = Depends(verify_secret),
 ):
@@ -44,25 +49,62 @@ async def ingest_lesson(
         print(f"WEBHOOK WARNING: Student '{student_username}' not found.")
         raise HTTPException(status_code=404, detail=f"Student '{student_username}' not found")
 
-    # 2. Save uploaded files to temp
-    temp_paths = []
+    temp_dir = "temp_ingest"
+    os.makedirs(temp_dir, exist_ok=True)
+    raw_paths = []
     if files:
-        temp_dir = "temp_ingest"
-        os.makedirs(temp_dir, exist_ok=True)
         for i, file in enumerate(files):
-            ext = os.path.splitext(file.filename or "bin")[1] or ".bin"
+            ext = os.path.splitext(file.filename or "")[1].lower()
+            if not ext and file.content_type:
+                ct = file.content_type.lower()
+                if "zip" in ct:
+                    ext = ".zip"
+                elif "/" in ct:
+                    ext = "." + ct.split("/")[-1].replace("x-", "")
+            ext = ext or ".bin"
             safe_name = f"{datetime.now().timestamp()}_{i}_{uuid.uuid4().hex[:8]}{ext}"
             file_path = os.path.join(temp_dir, safe_name)
             with open(file_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
-            temp_paths.append(file_path)
+            raw_paths.append(file_path)
+            print(f"WEBHOOK: Saved file {i}: {file.filename} (content_type={file.content_type}) → {file_path}")
+
+    temp_paths = []
+    for path in raw_paths:
+        if zipfile.is_zipfile(path):
+            extract_dir = path + "_extracted"
+            os.makedirs(extract_dir, exist_ok=True)
+            try:
+                with zipfile.ZipFile(path, 'r') as zf:
+                    if len(zf.namelist()) > MAX_ZIP_FILES:
+                        raise HTTPException(status_code=400, detail=f"Zip contains too many files (max {MAX_ZIP_FILES})")
+                    zf.extractall(extract_dir)
+            finally:
+                os.remove(path)
+
+            idx = 0
+            for root, _, filenames in os.walk(extract_dir):
+                for fname in sorted(filenames):
+                    full = os.path.join(root, fname)
+                    if any(part.startswith(p) for p in SKIP_PREFIXES for part in full.split(os.sep)):
+                        continue
+                    ext = os.path.splitext(fname)[1].lower() or ".bin"
+                    safe = os.path.join(extract_dir, f"part_{idx}{ext}")
+                    os.rename(full, safe)
+                    temp_paths.append(safe)
+                    idx += 1
+            print(f"WEBHOOK: Extracted zip -> {len(temp_paths)} files: {[os.path.basename(p) for p in temp_paths]}")
+        else:
+            temp_paths.append(path)
 
     try:
         # 3. Create Lesson
         lesson_data = {
-            "title": title,
+            "title": title or "Przetwarzanie...",
             "description": "Przetwarzanie materiałów...",
         }
+        if lesson_date:
+            lesson_data["lesson_date"] = lesson_date
         res_lesson = supabase.table("lessons").insert(lesson_data).execute()
         new_lesson = res_lesson.data[0]
         lesson_id = new_lesson['id']
@@ -82,8 +124,11 @@ async def ingest_lesson(
 
     except Exception as e:
         print(f"WEBHOOK ERROR: {e}")
-        # Cleanup if failed immediately
         for p in temp_paths:
             if os.path.exists(p):
                 os.remove(p)
+        for p in raw_paths:
+            d = p + "_extracted"
+            if os.path.isdir(d):
+                shutil.rmtree(d, ignore_errors=True)
         raise HTTPException(status_code=500, detail=str(e))

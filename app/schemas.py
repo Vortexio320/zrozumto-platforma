@@ -25,6 +25,7 @@ class UpdateStudentRequest(BaseModel):
 class LessonBase(BaseModel):
     title: str
     description: Optional[str] = None
+    lesson_date: Optional[str] = None
     file_url: Optional[str] = None
     transcript: Optional[str] = None
 
@@ -66,3 +67,7 @@ class AnalysisRequest(BaseModel):
 class UpdateLessonRequest(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
+
+class OpenAnswerRequest(BaseModel):
+    question: str
+    image_base64: str

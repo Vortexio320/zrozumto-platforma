@@ -7,12 +7,46 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def fix_latex_json_corruption(s: str) -> str:
+    """
+    Fix LaTeX mangled by JSON parsing: \\f in \\frac becomes form feed (U+000C),
+    \\n in \\nabla becomes newline, etc. Restore these for proper KaTeX rendering.
+    """
+    if not isinstance(s, str):
+        return s
+    # \f -> form feed, \n -> newline, \r -> carriage return, \t -> tab
+    replacements = [
+        ("\x0crac", "\\frac"),   # form feed from \f in \frac
+        ("\x0aabla", "\\nabla"),  # newline from \n in \nabla
+        ("\x0dightarrow", "\\rightarrow"),  # \r in \rightarrow
+        ("\x0dLeftarrow", "\\Leftarrow"),
+        ("\x09heta", "\\theta"),  # tab from \t in \theta
+    ]
+    for old, new in replacements:
+        s = s.replace(old, new)
+    # Also fix lone form feed that might be from \frac in different context
+    if "\x0c" in s:
+        s = s.replace("\x0c", "\\f")
+    return s
+
+
+def fix_latex_in_structure(obj):
+    """Recursively fix LaTeX corruption in quiz/flashcard/analysis JSON structures."""
+    if isinstance(obj, str):
+        return fix_latex_json_corruption(obj)
+    if isinstance(obj, list):
+        return [fix_latex_in_structure(x) for x in obj]
+    if isinstance(obj, dict):
+        return {k: fix_latex_in_structure(v) for k, v in obj.items()}
+    return obj
+
 api_key = os.getenv("GOOGLE_API_KEY")
 if not api_key:
     raise ValueError("GOOGLE_API_KEY not found in .env")
 
 client = genai.Client(api_key=api_key)
-MODEL_NAME = "gemini-2.0-flash"
+MODEL_NAME = "gemini-3.1-flash-lite-preview"
 
 MIME_FALLBACKS = {".m4a": "audio/mp4", ".m4v": "video/mp4", ".webm": "video/webm"}
 
@@ -50,18 +84,19 @@ def generate_quiz_content(file_paths: list[str]):
         Zasady:
         1. Stwórz 10 pytań zamkniętych (A, B, C, D).
         2. Format wyjściowy musi być CZYSTYM JSONEM.
-        3. Język polski.
+        3. Język polski – wyłącznie. Używaj TYLKO alfabetu łacińskiego (bez cyrylicy, bez innych znaków).
         4. Pytania powinny nawiązywać do treści z nagrania i zdjęć.
         5. Każde pytanie MUSI zawierać pole "wyjasnienie" z krótkim uzasadnieniem poprawnej odpowiedzi.
 
-        WAŻNE - Formatowanie matematyczne (LaTeX):
+        WAŻNE - Formatowanie matematyczne (LaTeX) i JSON:
         - Wszystkie wyrażenia matematyczne, wzory, liczby w kontekście matematycznym, równania, ułamki, potęgi, pierwiastki itp. MUSZĄ być zapisane w notacji LaTeX.
-        - Użyj $...$ dla wyrażeń w linii tekstu, np. $x^2 + 3x - 5$, $\\frac{1}{2}$, $\\sqrt{16}$, $2x + 3 = 7$.
+        - Użyj $...$ dla wyrażeń w linii tekstu, np. $x^2 + 3x - 5$, $\\\\frac{1}{2}$, $\\\\sqrt{16}$, $2x + 3 = 7$.
+        - W JSON backslash musisz escapować: pisz \\\\frac zamiast \\frac, \\\\sqrt zamiast \\sqrt.
         - Zwykły tekst opisowy (bez matematyki) zapisuj normalnie, BEZ znaczników LaTeX.
-        - Przykłady poprawnego zapisu:
-          - pytanie: "Ile wynosi $\\frac{3}{4} + \\frac{1}{2}$?"
-          - odpowiedź: "A) $\\frac{5}{4}$"
-          - wyjasnienie: "Sprowadzamy do wspólnego mianownika: $\\frac{3}{4} + \\frac{2}{4} = \\frac{5}{4}$"
+        - Przykłady poprawnego zapisu w JSON:
+          - pytanie: "Ile wynosi $\\\\frac{3}{4} + \\\\frac{1}{2}$?"
+          - odpowiedź: "A) $\\\\frac{5}{4}$"
+          - wyjasnienie: "Sprowadzamy do wspólnego mianownika: $\\\\frac{3}{4} + \\\\frac{2}{4} = \\\\frac{5}{4}$"
 
         Wzór JSON:
         [
@@ -113,6 +148,8 @@ def generate_lesson_summary(file_paths: list[str]) -> dict:
         1. Krótki, konkretny tytuł lekcji (np. "Logarytmy i ich właściwości", "Równania kwadratowe").
         2. Opis lekcji w 1-2 zdaniach opisujący czego dotyczy lekcja.
 
+        Używaj wyłącznie języka polskiego i alfabetu łacińskiego (bez cyrylicy).
+
         Format JSON:
         {
           "title": "Konkretny tytuł lekcji...",
@@ -160,11 +197,11 @@ def generate_more_questions(quiz_context: list[dict], count: int = 10, difficult
     Wygeneruj {count} NOWYCH pytań zamkniętych (A, B, C, D) na ten sam temat.
     Pytania powinny być {diff_text}.
     NIE powtarzaj istniejących pytań.
-    Język polski. Format: CZYSTY JSON.
+    Język polski – wyłącznie. Używaj TYLKO alfabetu łacińskiego (bez cyrylicy). Format: CZYSTY JSON.
 
-    WAŻNE - Formatowanie matematyczne (LaTeX):
+    WAŻNE - Formatowanie matematyczne (LaTeX) i JSON:
     - Wszystkie wyrażenia matematyczne, wzory, liczby w kontekście matematycznym, równania, ułamki, potęgi, pierwiastki itp. MUSZĄ być zapisane w notacji LaTeX.
-    - Użyj $...$ dla wyrażeń w linii tekstu, np. $x^2 + 3x - 5$, $\\frac{{1}}{{2}}$, $\\sqrt{{16}}$.
+    - Użyj $...$ dla wyrażeń w linii tekstu. W JSON backslash escapuj: pisz \\\\frac zamiast \\frac, \\\\sqrt zamiast \\sqrt.
     - Zwykły tekst opisowy zapisuj normalnie, BEZ znaczników LaTeX.
 
     Wzór JSON:
@@ -194,11 +231,11 @@ def generate_flashcards(quiz_context: list[dict]) -> str:
     1. Stwórz 8-12 fiszek.
     2. Każda fiszka ma "przod" (pojęcie, pytanie lub wzór) i "tyl" (wyjaśnienie, odpowiedź).
     3. Fiszki powinny pokrywać najważniejsze pojęcia z lekcji.
-    4. Język polski. Format: CZYSTY JSON.
+    4. Język polski – wyłącznie. Używaj TYLKO alfabetu łacińskiego (bez cyrylicy). Format: CZYSTY JSON.
 
-    WAŻNE - Formatowanie matematyczne (LaTeX):
+    WAŻNE - Formatowanie matematyczne (LaTeX) i JSON:
     - Wszystkie wyrażenia matematyczne, wzory, równania itp. MUSZĄ być zapisane w notacji LaTeX.
-    - Użyj $...$ dla wyrażeń w linii tekstu, np. $x^2$, $\\frac{{1}}{{2}}$, $\\sqrt{{16}}$.
+    - Użyj $...$ dla wyrażeń w linii tekstu. W JSON backslash escapuj: pisz \\\\frac zamiast \\frac.
     - Zwykły tekst opisowy zapisuj normalnie, BEZ znaczników LaTeX.
 
     Wzór JSON:
@@ -210,6 +247,50 @@ def generate_flashcards(quiz_context: list[dict]) -> str:
     ]
     """
     return _call_gemini_json(prompt)
+
+
+def analyze_open_answer(question: str, image_base64: str) -> dict:
+    """Analyze a student's handwritten/drawn answer using Gemini vision."""
+    import base64
+    image_bytes = base64.b64decode(image_base64)
+
+    prompt = f"""Jesteś nauczycielem matematyki. Uczeń odpowiedział na pytanie otwarte, pisząc/rysując odpowiedź na tablicy.
+
+Pytanie: {question}
+
+Przeanalizuj obraz z odpowiedzią ucznia i oceń, czy jest poprawna.
+
+WAŻNE:
+- Dokładnie przeanalizuj to, co uczeń napisał/narysował na obrazie.
+- Oceń poprawność rozwiązania krok po kroku.
+- Jeśli odpowiedź jest częściowo poprawna, uznaj ją za niepoprawną, ale doceń poprawne elementy.
+- Bądź konstruktywny i motywujący w uzasadnieniu.
+- Jeśli odwołujesz się do wzorów lub wyrażeń matematycznych, użyj notacji LaTeX w $...$ (np. $x^2$, $\\frac{{1}}{{2}}$).
+- W JSON przed poleceniami LaTeX używaj podwójnego backslasha, np. \\\\frac{{4}}{{2}} zamiast \\frac.
+
+Format JSON:
+{{
+  "poprawna": true/false,
+  "uzasadnienie": "Szczegółowe uzasadnienie oceny..."
+}}"""
+
+    response = client.models.generate_content(
+        model=MODEL_NAME,
+        contents=[
+            types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
+            prompt,
+        ],
+        config=types.GenerateContentConfig(response_mime_type="application/json"),
+    )
+    clean = response.text.replace("```json", "").replace("```", "").strip()
+    result = json.loads(clean)
+    uz = result.get("uzasadnienie", "")
+    uz = uz.replace("\\n", "\n")
+    uz = uz.replace("\\t", "\t")
+    if "\x0c" in uz:
+        uz = uz.replace("\x0c", "\\f")
+    result["uzasadnienie"] = uz
+    return result
 
 
 def generate_analysis(questions: list[dict], user_answers: list) -> str:
@@ -240,6 +321,6 @@ def generate_analysis(questions: list[dict], user_answers: list) -> str:
     }}
 
     Bądź konstruktywny i motywujący. Format: CZYSTY JSON.
-    Jeśli odwołujesz się do wzorów lub wyrażeń matematycznych, użyj notacji LaTeX w $...$ (np. $x^2$, $\\frac{{1}}{{2}}$).
+    Jeśli odwołujesz się do wzorów lub wyrażeń matematycznych, użyj notacji LaTeX w $...$ (w JSON escapuj backslash: \\\\frac).
     """
     return _call_gemini_json(prompt)

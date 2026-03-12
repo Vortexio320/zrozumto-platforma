@@ -71,6 +71,11 @@ export default function DashboardView({ onOpenLesson }: DashboardViewProps) {
             <p className="text-gray-500 text-sm mt-2">
               {lesson.description || 'Brak opisu'}
             </p>
+            {lesson.lesson_date && (
+              <p className="text-gray-400 text-xs mt-1">
+                Data lekcji: {new Date(lesson.lesson_date).toLocaleDateString('pl-PL')}
+              </p>
+            )}
           </div>
         ))}
       </div>
