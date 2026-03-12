@@ -253,8 +253,8 @@ function LessonProgressCard({
   onShowReview,
   onEditLesson,
 }: LessonProgressCardProps) {
-  const date = lesson.created_at
-    ? new Date(lesson.created_at).toLocaleDateString('pl-PL')
+  const date = lesson.lesson_date
+    ? new Date(lesson.lesson_date).toLocaleDateString('pl-PL')
     : '—';
   const quizzes = lesson.quizzes || [];
 

@@ -14,6 +14,7 @@ export interface Lesson {
   id: string;
   title: string;
   description?: string;
+  lesson_date?: string;
   file_url?: string;
   transcript?: string;
   created_at?: string;
@@ -80,6 +81,7 @@ export interface ProgressLesson {
   id: string;
   title: string;
   description?: string;
+  lesson_date?: string;
   created_at?: string;
   quizzes: ProgressQuiz[];
 }

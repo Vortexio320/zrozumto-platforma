@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from ..dependencies import require_admin
 from ..services import get_admin_supabase
-from ..schemas import CreateUserRequest, UpdateLessonRequest, UpdateStudentRequest
+from ..ai import fix_latex_in_structure
+from ..schemas import CreateUserRequest, UpdateLessonRequest, UpdateStudentRequest, OpenAnswerRequest
 import os
 
 EMAIL_DOMAIN = os.environ.get("USER_EMAIL_DOMAIN", "zrozum-to.pl")
@@ -135,7 +136,7 @@ async def get_student_progress(student_id: str, admin = Depends(require_admin)):
 
         lessons = (
             supabase.table("lessons")
-            .select("id, title, description, created_at")
+            .select("id, title, description, lesson_date, created_at")
             .in_("id", lesson_ids)
             .execute()
         )
@@ -171,10 +172,11 @@ async def get_student_progress(student_id: str, admin = Depends(require_admin)):
             lesson_quizzes = quiz_map.get(lid, [])
             enriched_quizzes = []
             for qz in lesson_quizzes:
+                questions = fix_latex_in_structure(qz.get("questions_json") or [])
                 enriched_quizzes.append({
                     "id": qz["id"],
-                    "questions": qz.get("questions_json") or [],
-                    "question_count": len(qz.get("questions_json") or []),
+                    "questions": questions,
+                    "question_count": len(questions),
                     "created_at": qz["created_at"],
                     "results": results_map.get(qz["id"], []),
                 })
@@ -202,6 +204,16 @@ async def delete_quiz(quiz_id: str, admin = Depends(require_admin)):
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/whiteboard/analyze")
+async def analyze_whiteboard(req: OpenAnswerRequest, admin=Depends(require_admin)):
+    from ..ai import analyze_open_answer
+    try:
+        result = analyze_open_answer(req.question, req.image_base64)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)}")
 
 
 @router.patch("/lessons/{lesson_id}")

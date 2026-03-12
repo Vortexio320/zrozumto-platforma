@@ -24,6 +24,7 @@
 | **Vite 6** | Bundler i dev server |
 | **Tailwind CSS 4** | Stylowanie (PostCSS) |
 | **KaTeX** | Renderowanie wzorów matematycznych |
+| **react-sketch-canvas** | Tablica rysunkowa (odpowiedzi otwarte) |
 | **Inter** (Google Fonts) | Typografia |
 
 ### Baza danych
@@ -69,7 +70,7 @@ zrozumto-platforma/
 │   │   ├── context/AuthContext.tsx # React Context (token, user, login/logout)
 │   │   ├── types/index.ts       # Interfejsy TypeScript (Lesson, Quiz, User...)
 │   │   ├── components/          # Navbar, MathContent, Spinner, quiz sub-views
-│   │   └── views/               # LoginView, DashboardView, LessonView, AdminView
+│   │   └── views/               # LoginView, DashboardView, LessonView, AdminView, WhiteboardView
 │   ├── index.html               # Vite entry HTML
 │   ├── package.json
 │   ├── vite.config.ts
@@ -103,7 +104,7 @@ zrozumto-platforma/
 | Tabela | Opis |
 |--------|------|
 | **profiles** | Rozszerzenie auth.users (username, role, full_name, school_type, class) |
-| **lessons** | title, description, file_url, transcript |
+| **lessons** | title, description, lesson_date, file_url, transcript |
 | **lesson_assignments** | Przypisania lekcji do uczniów |
 | **quizzes** | lesson_id, questions_json (tablica pytań) |
 | **quiz_results** | user_id, quiz_id, score, details_json |
@@ -131,6 +132,7 @@ zrozumto-platforma/
 | `/admin/quizzes/{quiz_id}` | DELETE | Usunięcie quizu (admin, usuwa też quiz_results) |
 | `/admin/students/{id}/progress` | GET | Postępy ucznia (lekcje, quizy, wyniki) |
 | `/admin/lessons/{id}` | PATCH | Edycja tytułu/opisu lekcji |
+| `/admin/whiteboard/analyze` | POST | Analiza odpowiedzi otwartej (obraz + pytanie → Gemini vision) |
 | `/webhooks/ingest` | POST | Webhook n8n (tworzenie lekcji + przetwarzanie w tle) |
 
 ### 3.4 Stan frontendu (React)
@@ -186,10 +188,26 @@ zrozumto-platforma/
 #### Webhook (n8n → backend)
 
 ```
-1. n8n wysyła POST /webhooks/ingest z X-Webhook-Secret, student_username, title, pliki
-2. Backend weryfikuje secret, znajduje użytkownika, tworzy lekcję, przypisuje do ucznia
-3. BackgroundTasks.add_task(process_ingested_content, lesson_id, temp_paths)
-4. Worker: AI summary → aktualizacja lekcji, AI quiz → wstawienie quizu
+1. n8n pakuje pliki lekcji (audio, zdjęcia) w jeden .zip i wysyła POST /webhooks/ingest
+   z X-Webhook-Secret, student_username, title, plik .zip (lub pojedyncze pliki – oba tryby obsługiwane)
+2. Backend weryfikuje secret, znajduje użytkownika
+3. Jeśli plik to .zip → rozpakowuje do temp (pomija __MACOSX, ukryte pliki; max 20 plików)
+4. Tworzy jedną lekcję, przypisuje do ucznia
+5. BackgroundTasks.add_task(process_ingested_content, lesson_id, temp_paths)
+6. Worker: AI summary → aktualizacja lekcji, AI quiz → wstawienie quizu
+7. Worker: cleanup temp plików i rozpakowanych katalogów
+```
+
+#### Tablica – odpowiedź otwarta (admin test)
+
+```
+1. Admin wpisuje pytanie otwarte i klika „Otwórz tablicę"
+2. WhiteboardView: react-sketch-canvas (pen, eraser, undo, clear, kolory, grubość)
+3. Admin rysuje/pisze odpowiedź i klika „Sprawdź odpowiedź"
+4. Eksport canvas → PNG (base64), POST /admin/whiteboard/analyze { question, image_base64 }
+5. Backend: analyze_open_answer() → Gemini vision analizuje obraz
+6. Odpowiedź: { poprawna: bool, uzasadnienie: string }
+7. Frontend wyświetla wynik (poprawna/niepoprawna + uzasadnienie)
 ```
 
 #### Wysłanie quizu
@@ -208,6 +226,7 @@ zrozumto-platforma/
 | **Analysis** | `generate_analysis(questions, answers)` → JSON (mocne_strony, obszary_do_poprawy, wskazowki) |
 | **Flashcards** | `generate_flashcards(questions)` → tablica `[{przod, tyl}]` |
 | **More questions** | `generate_more_questions(existing, count, difficulty)` → nowe pytania; endpoint tworzy nowy quiz |
+| **Open answer** | `analyze_open_answer(question, image_base64)` → Gemini vision analizuje obraz odpowiedzi → `{poprawna, uzasadnienie}` |
 
 ### 3.6 Autoryzacja
 

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from ..services import get_supabase, get_admin_supabase, Client
 from ..dependencies import get_current_user
-from ..ai import generate_quiz_content, generate_more_questions, generate_flashcards, generate_analysis
+from ..ai import generate_quiz_content, generate_more_questions, generate_flashcards, generate_analysis, fix_latex_in_structure
 from ..schemas import SubmitQuizResult, MoreQuestionsRequest, AnalysisRequest
 import shutil
 import os
@@ -28,7 +28,7 @@ async def generate_quiz(
 
         quiz_text = generate_quiz_content([temp_filename])
         clean_json = quiz_text.replace("```json", "").replace("```", "").strip()
-        quiz_data = json.loads(clean_json)
+        quiz_data = fix_latex_in_structure(json.loads(clean_json))
 
         new_quiz = {"lesson_id": lesson_id, "questions_json": quiz_data}
         res = supabase.table("quizzes").insert(new_quiz).execute()
@@ -53,6 +53,10 @@ async def get_quiz(
 ):
     try:
         response = supabase.table("quizzes").select("*").eq("lesson_id", lesson_id).execute()
+        # Fix LaTeX corruption in stored quiz data (legacy or JSON-parse artifacts)
+        for quiz in response.data:
+            if quiz.get("questions_json"):
+                quiz["questions_json"] = fix_latex_in_structure(quiz["questions_json"])
         return response.data
     except Exception as e:
         raise HTTPException(status_code=404, detail="Quiz not found")
@@ -67,7 +71,7 @@ async def submit_quiz_results(
     supabase = get_admin_supabase()
     try:
         quiz_resp = supabase.table("quizzes").select("questions_json").eq("id", quiz_id).single().execute()
-        questions = quiz_resp.data["questions_json"]
+        questions = fix_latex_in_structure(quiz_resp.data["questions_json"])
     except Exception:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
@@ -109,7 +113,7 @@ async def more_questions(
     try:
         quiz_resp = supabase.table("quizzes").select("lesson_id, questions_json").eq("id", quiz_id).single().execute()
         lesson_id = quiz_resp.data["lesson_id"]
-        existing_questions = quiz_resp.data["questions_json"]
+        existing_questions = fix_latex_in_structure(quiz_resp.data["questions_json"])
     except Exception:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
@@ -119,7 +123,7 @@ async def more_questions(
     try:
         raw = generate_more_questions(existing_questions, body.count, body.difficulty)
         clean = raw.replace("```json", "").replace("```", "").strip()
-        parsed = json.loads(clean)
+        parsed = fix_latex_in_structure(json.loads(clean))
         print(f"More questions: AI returned type={type(parsed).__name__}, len={len(parsed) if isinstance(parsed, (list, dict)) else 'n/a'}")
         # Normalize: AI may return array or object with "questions"/"pytania" key
         if isinstance(parsed, list):
@@ -162,14 +166,14 @@ async def quiz_flashcards(
     supabase = get_admin_supabase()
     try:
         quiz_resp = supabase.table("quizzes").select("questions_json").eq("id", quiz_id).single().execute()
-        questions = quiz_resp.data["questions_json"]
+        questions = fix_latex_in_structure(quiz_resp.data["questions_json"])
     except Exception:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
     try:
         raw = generate_flashcards(questions)
         clean = raw.replace("```json", "").replace("```", "").strip()
-        cards = json.loads(clean)
+        cards = fix_latex_in_structure(json.loads(clean))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI generation failed: {e}")
 
@@ -185,14 +189,14 @@ async def quiz_analysis(
     supabase = get_admin_supabase()
     try:
         quiz_resp = supabase.table("quizzes").select("questions_json").eq("id", quiz_id).single().execute()
-        questions = quiz_resp.data["questions_json"]
+        questions = fix_latex_in_structure(quiz_resp.data["questions_json"])
     except Exception:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
     try:
         raw = generate_analysis(questions, body.answers)
         clean = raw.replace("```json", "").replace("```", "").strip()
-        analysis = json.loads(clean)
+        analysis = fix_latex_in_structure(json.loads(clean))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI generation failed: {e}")
 
