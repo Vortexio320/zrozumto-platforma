@@ -79,7 +79,14 @@ export default function WhiteboardView({ question, onBack }: WhiteboardViewProps
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div
+      className="flex flex-col px-4 sm:px-8"
+      style={{
+        height: 'calc(100vh - 8rem)',
+        width: '100vw',
+        marginLeft: 'calc(-50vw + 50%)',
+      }}
+    >
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <button
@@ -181,12 +188,12 @@ export default function WhiteboardView({ question, onBack }: WhiteboardViewProps
         </div>
       </div>
 
-      {/* Canvas - explicit pixel dimensions so full area is drawable (no flex/percent issues) */}
-      <div className="rounded-xl border-2 border-gray-300 overflow-hidden bg-white">
+      {/* Canvas - grows to fill remaining vertical space */}
+      <div className="flex-1 min-h-[300px] rounded-xl border-2 border-gray-300 overflow-hidden bg-white">
         <ReactSketchCanvas
           ref={canvasRef}
           width="100%"
-          height="500px"
+          height="100%"
           strokeWidth={strokeWidth}
           strokeColor={strokeColor}
           eraserWidth={20}
