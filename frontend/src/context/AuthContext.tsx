@@ -49,6 +49,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       username: data.user.username,
       role: data.user.role as UserInfo['role'],
       full_name: data.user.full_name,
+      school_type: data.user.school_type,
+      class: data.user.class,
     };
     const newToken = data.access_token;
     setToken(newToken);

@@ -293,6 +293,238 @@ Format JSON:
     return result
 
 
+CONFIDENCE_LABELS = {
+    1: "niska (uczeń zgadywał)",
+    2: "średnia (uczeń nie był pewien)",
+    3: "wysoka (uczeń był pewien odpowiedzi)",
+}
+
+
+def check_task_answer(
+    zadanie: dict,
+    answer: str | None = None,
+    image_base64: str | None = None,
+    confidence: int = 2,
+) -> dict:
+    """Check a student's answer to an exam task using Gemini.
+
+    Three modes:
+    - Closed task, no whiteboard (answer only): text-based check
+    - Closed task, with whiteboard (answer + image): vision check of both answer and reasoning
+    - Open task (image only): vision check of the full solution
+    """
+    import base64
+
+    tresc = zadanie.get("tresc", "")
+    odpowiedzi = zadanie.get("odpowiedzi", [])
+    typ = zadanie.get("typ", "")
+    podtyp = zadanie.get("podtyp", "")
+    punkty = zadanie.get("punkty", 1)
+    tikz = zadanie.get("tikz", "")
+
+    conf_label = CONFIDENCE_LABELS.get(confidence, CONFIDENCE_LABELS[2])
+
+    task_description = f"""Zadanie egzaminacyjne (egzamin ósmoklasisty):
+Typ: {typ} / {podtyp}
+Punkty: {punkty}
+Treść: {tresc}"""
+
+    if odpowiedzi:
+        task_description += f"\nWarianty odpowiedzi: {json.dumps(odpowiedzi, ensure_ascii=False)}"
+    if tikz:
+        task_description += f"\n(Zadanie zawiera rysunek pomocniczy w TikZ)"
+
+    has_image = image_base64 is not None and len(image_base64) > 100
+
+    if typ == "otwarte" or (has_image and not answer):
+        # Open task: image-only evaluation
+        image_bytes = base64.b64decode(image_base64)
+        prompt = f"""{task_description}
+
+Uczeń rozwiązał to zadanie otwarte na tablicy (rysunek/obliczenia widoczne na obrazie).
+Pewność ucznia: {conf_label}
+
+Przeanalizuj obraz z odpowiedzią ucznia i oceń:
+
+WAŻNE:
+- Dokładnie przeanalizuj to, co uczeń napisał/narysował.
+- Oceń poprawność rozwiązania krok po kroku.
+- Jeśli odpowiedź jest częściowo poprawna, uznaj ją za niepoprawną, ale doceń poprawne elementy.
+- Bądź konstruktywny i motywujący.
+- Jeśli pewność była wysoka a odpowiedź błędna, wskaż konkretne błędne przekonanie.
+- Jeśli pewność była niska a odpowiedź poprawna, wzmocnij zrozumienie.
+- Użyj notacji LaTeX w $...$ dla wzorów. W JSON escapuj backslash: \\\\frac.
+
+Format JSON:
+{{
+  "poprawna_odpowiedz": true/false,
+  "poprawne_rozumowanie": true/false,
+  "uzasadnienie": "Szczegółowe uzasadnienie oceny..."
+}}"""
+
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=[
+                types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
+                prompt,
+            ],
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
+
+    elif has_image and answer:
+        # Closed task with whiteboard: check both answer AND reasoning
+        image_bytes = base64.b64decode(image_base64)
+        prompt = f"""{task_description}
+
+Uczeń wybrał odpowiedź: {answer}
+Pewność ucznia: {conf_label}
+
+Uczeń DODATKOWO pokazał swoje obliczenia/rozumowanie na tablicy (obraz dołączony).
+
+Oceń ODDZIELNIE:
+1. Czy wybrana odpowiedź ({answer}) jest poprawna?
+2. Czy rozumowanie pokazane na tablicy jest poprawne i prowadzi do właściwego wyniku?
+
+WAŻNE SCENARIUSZE:
+- Poprawna odpowiedź + poprawne rozumowanie = pełne opanowanie. Pochwal ucznia.
+- Poprawna odpowiedź + BŁĘDNE rozumowanie = uczeń trafił, ale rozumowanie jest wadliwe. Wyjaśnij błąd w rozumowaniu i pokaż prawidłowy tok myślenia. To ważne — zgadywanie to nie nauka.
+- Błędna odpowiedź + częściowo poprawne rozumowanie = doceń dobre elementy i wskaż gdzie nastąpił błąd.
+- Błędna odpowiedź + błędne rozumowanie = wyjaśnij prawidłowe podejście od podstaw.
+
+Bądź konstruktywny i motywujący. Użyj notacji LaTeX w $...$ dla wzorów. W JSON escapuj backslash: \\\\frac.
+
+Format JSON:
+{{
+  "poprawna_odpowiedz": true/false,
+  "poprawne_rozumowanie": true/false,
+  "uzasadnienie": "Szczegółowe uzasadnienie..."
+}}"""
+
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=[
+                types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
+                prompt,
+            ],
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
+
+    else:
+        # Closed task, answer only (no whiteboard)
+        prompt = f"""{task_description}
+
+Uczeń wybrał odpowiedź: {answer}
+Pewność ucznia: {conf_label}
+
+Oceń, czy odpowiedź jest poprawna.
+
+WAŻNE:
+- Wyjaśnij DLACZEGO odpowiedź jest poprawna lub niepoprawna.
+- Jeśli odpowiedź jest błędna, wyjaśnij prawidłowe rozwiązanie krok po kroku.
+- Jeśli pewność była wysoka a odpowiedź błędna, wskaż konkretne błędne przekonanie ucznia.
+- Jeśli pewność była niska a odpowiedź poprawna, wzmocnij zrozumienie ("Dobrze! Oto dlaczego...").
+- Bądź konstruktywny i motywujący.
+- Użyj notacji LaTeX w $...$ dla wzorów. W JSON escapuj backslash: \\\\frac.
+
+Format JSON:
+{{
+  "poprawna_odpowiedz": true/false,
+  "poprawne_rozumowanie": null,
+  "uzasadnienie": "Szczegółowe uzasadnienie..."
+}}"""
+
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=[prompt],
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
+
+    clean = response.text.replace("```json", "").replace("```", "").strip()
+    result = json.loads(clean)
+    result = fix_latex_in_structure(result)
+
+    uz = result.get("uzasadnienie", "")
+    uz = uz.replace("\\n", "\n").replace("\\t", "\t")
+    if "\x0c" in uz:
+        uz = uz.replace("\x0c", "\\f")
+    result["uzasadnienie"] = uz
+
+    return result
+
+
+def generate_task_hint(zadanie: dict, hint_level: int = 1) -> dict:
+    """Generate a hint for a task without revealing the answer."""
+    tresc = zadanie.get("tresc", "")
+    odpowiedzi = zadanie.get("odpowiedzi", [])
+    typ = zadanie.get("typ", "")
+    podtyp = zadanie.get("podtyp", "")
+
+    level_instruction = (
+        "Daj DELIKATNĄ wskazówkę — wskaż kierunek myślenia, przypomnij odpowiedni wzór lub koncepcję, ale NIE podawaj odpowiedzi ani kolejnych kroków rozwiązania."
+        if hint_level == 1
+        else "Daj MOCNIEJSZĄ wskazówkę — pokaż pierwszy krok rozwiązania lub wskaż konkretną metodę, ale NIE podawaj końcowej odpowiedzi."
+    )
+
+    prompt = f"""Jesteś cierpliwym nauczycielem matematyki. Uczeń potrzebuje pomocy z zadaniem egzaminacyjnym.
+
+Zadanie ({typ} / {podtyp}):
+{tresc}
+{f"Warianty odpowiedzi: {json.dumps(odpowiedzi, ensure_ascii=False)}" if odpowiedzi else ""}
+
+{level_instruction}
+
+WAŻNE:
+- NIE podawaj odpowiedzi!
+- Bądź motywujący i cierpliwy.
+- Użyj notacji LaTeX w $...$ dla wzorów. W JSON escapuj backslash: \\\\frac.
+
+Format JSON:
+{{
+  "hint": "Treść wskazówki..."
+}}"""
+
+    raw = _call_gemini_json(prompt)
+    clean = raw.replace("```json", "").replace("```", "").strip()
+    result = json.loads(clean)
+    result = fix_latex_in_structure(result)
+    return result
+
+
+def generate_worked_example(zadanie: dict) -> dict:
+    """Generate a step-by-step worked solution for a task."""
+    tresc = zadanie.get("tresc", "")
+    odpowiedzi = zadanie.get("odpowiedzi", [])
+    typ = zadanie.get("typ", "")
+    podtyp = zadanie.get("podtyp", "")
+
+    prompt = f"""Jesteś najlepszym nauczycielem matematyki. Rozwiąż to zadanie egzaminacyjne krok po kroku.
+
+Zadanie ({typ} / {podtyp}):
+{tresc}
+{f"Warianty odpowiedzi: {json.dumps(odpowiedzi, ensure_ascii=False)}" if odpowiedzi else ""}
+
+ZASADY:
+- Rozwiąż KROK PO KROKU, numerując każdy krok.
+- Wyjaśnij KAŻDY krok prostym językiem, jakbyś tłumaczył 14-latkowi.
+- Pokaż tok rozumowania — dlaczego wybieramy daną metodę.
+- Na końcu podaj ostateczną odpowiedź.
+- Użyj notacji LaTeX w $...$ dla wzorów. W JSON escapuj backslash: \\\\frac.
+
+Format JSON:
+{{
+  "steps": "Krok 1: ...\\nKrok 2: ...\\n...\\nOdpowiedź: ..."
+}}"""
+
+    raw = _call_gemini_json(prompt)
+    clean = raw.replace("```json", "").replace("```", "").strip()
+    result = json.loads(clean)
+    result = fix_latex_in_structure(result)
+    steps = result.get("steps", "")
+    steps = steps.replace("\\n", "\n").replace("\\t", "\t")
+    result["steps"] = steps
+    return result
+
+
 def generate_analysis(questions: list[dict], user_answers: list) -> str:
     data = []
     for i, q in enumerate(questions):

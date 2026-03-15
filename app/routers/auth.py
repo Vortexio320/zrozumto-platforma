@@ -29,7 +29,9 @@ async def login(req: LoginRequest):
             "password": req.password,
         })
         try:
-            profile = supabase.table("profiles").select("username, role").eq("id", str(res.user.id)).single().execute()
+            profile = supabase.table("profiles").select(
+                "username, role, full_name, school_type, class"
+            ).eq("id", str(res.user.id)).single().execute()
             profile_data = profile.data or {}
         except Exception:
             profile_data = {}
@@ -40,6 +42,9 @@ async def login(req: LoginRequest):
                 "id": str(res.user.id),
                 "username": profile_data.get("username", req.username),
                 "role": profile_data.get("role", "student"),
+                "full_name": profile_data.get("full_name"),
+                "school_type": profile_data.get("school_type"),
+                "class": profile_data.get("class"),
             }
         }
     except HTTPException:

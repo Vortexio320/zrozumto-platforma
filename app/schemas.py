@@ -71,3 +71,19 @@ class UpdateLessonRequest(BaseModel):
 class OpenAnswerRequest(BaseModel):
     question: str
     image_base64: str
+
+
+class TaskCheckRequest(BaseModel):
+    zadanie_id: str
+    answer: Optional[str] = None
+    image_base64: Optional[str] = None
+    confidence: int = Field(2, ge=1, le=3)
+
+
+class TaskHintRequest(BaseModel):
+    zadanie_id: str
+    hint_level: int = Field(1, ge=1, le=2)
+
+
+class TaskWorkedExampleRequest(BaseModel):
+    zadanie_id: str

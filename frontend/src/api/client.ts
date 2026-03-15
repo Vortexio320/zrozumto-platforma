@@ -78,7 +78,17 @@ export async function apiDelete<T>(path: string): Promise<T> {
 export async function loginApi(
   username: string,
   password: string,
-): Promise<{ access_token: string; user: { id: string; username: string; role: string; full_name?: string } }> {
+): Promise<{
+  access_token: string;
+  user: {
+    id: string;
+    username: string;
+    role: string;
+    full_name?: string;
+    school_type?: 'liceum' | 'podstawowka';
+    class?: string;
+  };
+}> {
   const res = await fetch('/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

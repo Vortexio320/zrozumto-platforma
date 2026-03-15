@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from .routers import lessons, quizzes, auth, webhooks, admin
+from .routers import lessons, quizzes, auth, webhooks, admin, tasks
 from .neo4j import init_neo4j, close_neo4j, get_neo4j
 import os
 from dotenv import load_dotenv
@@ -39,6 +39,7 @@ app.include_router(lessons.router)
 app.include_router(quizzes.router)
 app.include_router(webhooks.router)
 app.include_router(admin.router)
+app.include_router(tasks.router)
 
 
 
