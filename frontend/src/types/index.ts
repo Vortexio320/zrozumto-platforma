@@ -3,6 +3,37 @@ export interface UserInfo {
   username: string;
   role: 'student' | 'parent' | 'admin';
   full_name?: string;
+  school_type?: 'liceum' | 'podstawowka';
+  class?: string;
+}
+
+export interface Dzial {
+  id: number;
+  nazwa: string;
+}
+
+export interface Umiejetnosc {
+  id: string;
+  opis: string;
+}
+
+export interface Zadanie {
+  id: string;
+  numer: number;
+  data: string;
+  punkty: number;
+  typ: 'zamkniete' | 'otwarte';
+  podtyp: string;
+  tresc: string;
+  odpowiedzi: string[];
+  tikz: string;
+  umiejetnosci?: Umiejetnosc[];
+}
+
+export interface TaskCheckResult {
+  poprawna_odpowiedz: boolean;
+  poprawne_rozumowanie: boolean | null;
+  uzasadnienie: string;
 }
 
 export interface LoginResponse {
