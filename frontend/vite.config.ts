@@ -20,6 +20,7 @@ export default defineConfig({
         '/quizzes': target,
         '/admin': target,
         '/webhooks': target,
+        '/tasks': target,
         '/api': target,
       };
     })(),

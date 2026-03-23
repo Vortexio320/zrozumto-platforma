@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import StudentProgressPanel from '../components/StudentProgressPanel';
-import WhiteboardView from './WhiteboardView';
 import type { AdminUser } from '../types';
 
 interface AdminViewProps {
@@ -61,10 +60,6 @@ export default function AdminView({ onBack }: AdminViewProps) {
     id: string;
     name: string;
   } | null>(null);
-
-  // Whiteboard
-  const [showWhiteboard, setShowWhiteboard] = useState(false);
-  const [whiteboardQuestion, setWhiteboardQuestion] = useState('Rozwiąż równanie: $2x + 3 = 7$');
 
   function showMessage(text: string, error: boolean) {
     setMessage({ text, error });
@@ -164,15 +159,6 @@ export default function AdminView({ onBack }: AdminViewProps) {
     }
   }
 
-  if (showWhiteboard) {
-    return (
-      <WhiteboardView
-        question={whiteboardQuestion}
-        onBack={() => setShowWhiteboard(false)}
-      />
-    );
-  }
-
   return (
     <div>
       <button
@@ -183,43 +169,11 @@ export default function AdminView({ onBack }: AdminViewProps) {
       </button>
 
       <header className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">
-              Panel Administracyjny
-            </h1>
-            <p className="text-gray-500">Zarządzaj użytkownikami platformy.</p>
-          </div>
-          <button
-            onClick={() => setShowWhiteboard(true)}
-            className="bg-indigo-600 text-white px-5 py-2.5 rounded-lg font-semibold hover:bg-indigo-700 transition flex items-center gap-2"
-          >
-            <span className="text-lg">🖊️</span> Tablica (test)
-          </button>
-        </div>
+        <h1 className="text-3xl font-bold text-gray-900">
+          Panel Administracyjny
+        </h1>
+        <p className="text-gray-500">Zarządzaj użytkownikami platformy.</p>
       </header>
-
-      {/* Whiteboard question input */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 mb-8">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Pytanie do tablicy (test)
-        </label>
-        <div className="flex gap-3">
-          <input
-            type="text"
-            value={whiteboardQuestion}
-            onChange={e => setWhiteboardQuestion(e.target.value)}
-            className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-            placeholder="Wpisz pytanie otwarte..."
-          />
-          <button
-            onClick={() => setShowWhiteboard(true)}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-indigo-700 transition whitespace-nowrap"
-          >
-            Otwórz tablicę
-          </button>
-        </div>
-      </div>
 
       {/* Create User */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-8">

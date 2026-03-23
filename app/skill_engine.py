@@ -121,31 +121,25 @@ def get_skills_due_for_review(
 
 def get_available_skills(
     all_skills: list[str],
-    wymaga_edges: list[tuple[str, str]],
     mastery: dict[str, dict],
+    locked_skill_ids: set[str] | None = None,
 ) -> list[str]:
-    """Return skill IDs whose prerequisites are mastered but the skill itself is not.
+    """Return skill IDs that are not yet mastered and not admin-locked.
 
-    wymaga_edges: list of (skill_id, required_skill_id) pairs
+    Ordered by lowest mastery first (Ebbinghaus: weak skills recommended more often).
     """
-    prereq_map: dict[str, list[str]] = {}
-    for skill, required in wymaga_edges:
-        prereq_map.setdefault(skill, []).append(required)
-
+    locked = locked_skill_ids or set()
     available = []
     for sid in all_skills:
+        if sid in locked:
+            continue
         m = mastery.get(sid, {})
         if m.get("level", 0) >= MASTERY_THRESHOLD:
             continue
+        available.append(sid)
 
-        prereqs = prereq_map.get(sid, [])
-        all_prereqs_met = all(
-            mastery.get(p, {}).get("level", 0) >= MASTERY_THRESHOLD
-            for p in prereqs
-        )
-        if all_prereqs_met:
-            available.append(sid)
-
+    # Prioritize lowest mastery (weak skills recommended more often)
+    available.sort(key=lambda s: mastery.get(s, {}).get("level", 0))
     return available
 
 
@@ -155,43 +149,43 @@ def recommend_task(
     attempts: list[dict],
     recent_dzial_ids: list[int] | None = None,
     target_skill_id: str | None = None,
+    locked_skill_ids: set[str] | None = None,
 ) -> Optional[dict]:
     """Recommend a task for the student.
 
     Priority:
-    1. If target_skill_id is set, pick a task testing that skill
-    2. Skills due for spaced-repetition review
-    3. Available skills (prereqs met, skill not mastered), interleaved across dzialy
+    1. If target_skill_id is set, pick a task testing that skill (unless locked)
+    2. Skills due for spaced-repetition review (Ebbinghaus curve)
+    3. Available skills (not mastered, not locked), lowest mastery first, interleaved across dzialy
     4. Fallback: random unattempted task
     """
     with driver.session() as session:
         zadanie_skill_map = _fetch_zadanie_skill_map(session)
         all_skills = _fetch_all_skill_ids(session)
-        wymaga_edges = _fetch_wymaga_edges(session)
         skill_dzial_map = _fetch_skill_dzial_map(session)
 
     mastery = compute_skill_mastery(attempts, zadanie_skill_map)
     attempted_ids = {a["zadanie_id"] for a in attempts}
+    locked = locked_skill_ids or set()
 
-    if target_skill_id:
+    if target_skill_id and target_skill_id not in locked:
         return _pick_task_for_skills(
             driver, [target_skill_id], attempted_ids, zadanie_skill_map
         )
 
-    due_skills = get_skills_due_for_review(mastery)
+    due_skills = [s for s in get_skills_due_for_review(mastery) if s not in locked]
     if due_skills:
         if recent_dzial_ids:
             due_skills = _interleave_filter(due_skills, skill_dzial_map, recent_dzial_ids)
         if due_skills:
             return _pick_task_for_skills(driver, due_skills, attempted_ids, zadanie_skill_map)
 
-    available = get_available_skills(all_skills, wymaga_edges, mastery)
+    available = get_available_skills(all_skills, mastery, locked)
     if available:
         if recent_dzial_ids:
             available = _interleave_filter(available, skill_dzial_map, recent_dzial_ids)
-        if not available:
-            available = get_available_skills(all_skills, wymaga_edges, mastery)
-        return _pick_task_for_skills(driver, available, attempted_ids, zadanie_skill_map)
+        if available:
+            return _pick_task_for_skills(driver, available, attempted_ids, zadanie_skill_map)
 
     return _pick_random_task(driver, attempted_ids)
 
@@ -308,6 +302,40 @@ def fetch_dzialy(driver: Driver) -> list[dict]:
         return [{"id": r["id"], "nazwa": r["nazwa"]} for r in result]
 
 
+def fetch_all_tasks(driver: Driver, skip: int = 0, limit: int = 500) -> list[dict]:
+    """Fetch all Zadanie nodes (temporary tool)."""
+    with driver.session() as session:
+        result = session.run(
+            """
+            MATCH (z:Zadanie)
+            OPTIONAL MATCH (z)-[:SPRAWDZA]->(u:Umiejetnosc)
+            WITH z, collect({id: u.id, opis: u.opis}) AS umiejetnosci
+            RETURN z, umiejetnosci
+            ORDER BY z.id
+            SKIP $skip LIMIT $limit
+            """,
+            skip=skip,
+            limit=limit,
+        )
+        tasks = []
+        for record in result:
+            z = record["z"]
+            umiejetnosci = [u for u in record["umiejetnosci"] if u.get("id")]
+            tasks.append({
+                "id": z["id"],
+                "numer": z.get("numer"),
+                "data": z.get("data"),
+                "punkty": z.get("punkty", 1),
+                "typ": z.get("typ", ""),
+                "podtyp": z.get("podtyp", ""),
+                "tresc": z.get("tresc", ""),
+                "odpowiedzi": z.get("odpowiedzi", []),
+                "tikz": z.get("tikz", ""),
+                "umiejetnosci": umiejetnosci,
+            })
+        return tasks
+
+
 def fetch_tasks_by_dzial(driver: Driver, dzial_id: int, skip: int = 0, limit: int = 20) -> list[dict]:
     with driver.session() as session:
         result = session.run(
@@ -384,8 +412,15 @@ def fetch_random_task(driver: Driver, dzial_id: int | None = None) -> Optional[d
         }
 
 
-def fetch_skill_map(driver: Driver, user_attempts: list[dict]) -> dict:
-    """Return the full skill graph with mastery data for the skill map visualization."""
+def fetch_skill_map(
+    driver: Driver,
+    user_attempts: list[dict],
+    locked_skill_ids: set[str] | None = None,
+) -> dict:
+    """Return the full skill graph with mastery data for the skill map visualization.
+
+    locked_skill_ids: admin-locked skill IDs for this user (only these show as 'locked').
+    """
     with driver.session() as session:
         zadanie_skill_map = _fetch_zadanie_skill_map(session)
 
@@ -414,10 +449,7 @@ def fetch_skill_map(driver: Driver, user_attempts: list[dict]) -> dict:
         ]
 
     mastery = compute_skill_mastery(user_attempts, zadanie_skill_map)
-
-    all_skill_ids = [u["id"] for u in umiejetnosci]
-    wymaga_tuples = [(e["from"], e["to"]) for e in wymaga_edges]
-    available = set(get_available_skills(all_skill_ids, wymaga_tuples, mastery))
+    locked = locked_skill_ids or set()
 
     mastery_out = {}
     for u in umiejetnosci:
@@ -426,14 +458,14 @@ def fetch_skill_map(driver: Driver, user_attempts: list[dict]) -> dict:
         level = m.get("level", 0)
         attempts = m.get("attempts", 0)
 
-        if level >= MASTERY_THRESHOLD:
+        if sid in locked:
+            status = "locked"
+        elif level >= MASTERY_THRESHOLD:
             status = "mastered"
         elif attempts > 0:
             status = "in_progress"
-        elif sid in available:
-            status = "available"
         else:
-            status = "locked"
+            status = "available"
 
         mastery_out[sid] = {
             "level": round(level, 2),

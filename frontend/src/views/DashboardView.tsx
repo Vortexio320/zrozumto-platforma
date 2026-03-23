@@ -5,10 +5,11 @@ import type { Lesson } from '../types';
 
 interface DashboardViewProps {
   onOpenLesson: (lesson: Lesson) => void;
+  onOpenTasks?: () => void;
 }
 
-export default function DashboardView({ onOpenLesson }: DashboardViewProps) {
-  const { token } = useAuth();
+export default function DashboardView({ onOpenLesson, onOpenTasks }: DashboardViewProps) {
+  const { user } = useAuth();
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -27,12 +28,12 @@ export default function DashboardView({ onOpenLesson }: DashboardViewProps) {
   }, []);
 
   useEffect(() => {
-    if (token) {
+    if (user) {
       loadLessons();
     } else {
       setLoading(false);
     }
-  }, [token, loadLessons]);
+  }, [user, loadLessons]);
 
   return (
     <div>
@@ -51,6 +52,28 @@ export default function DashboardView({ onOpenLesson }: DashboardViewProps) {
 
       {!loading && !error && lessons.length === 0 && (
         <p className="text-gray-500">Brak przypisanych lekcji.</p>
+      )}
+
+      {onOpenTasks && (
+        <div
+          onClick={onOpenTasks}
+          className="mb-6 bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition cursor-pointer border border-indigo-100 bg-gradient-to-r from-indigo-50 to-white"
+        >
+          <div className="flex justify-between items-center">
+            <h3 className="font-bold text-lg text-indigo-900">
+              Zadania egzaminacyjne
+            </h3>
+            <span className="text-xs font-semibold bg-indigo-100 text-indigo-600 px-2 py-1 rounded">
+              EGZAMIN ÓSMOKLASISTY
+            </span>
+          </div>
+          <p className="text-indigo-700 text-sm mt-2">
+            Ćwicz zadania z egzaminu ósmoklasisty — przygotuj się do egzaminu z matematyki.
+          </p>
+          <p className="text-indigo-500 text-xs mt-1">
+            Kliknij, aby wybrać polecane zadanie lub przeglądać według działów.
+          </p>
+        </div>
       )}
 
       <div className="grid gap-4">

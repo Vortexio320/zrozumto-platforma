@@ -1,6 +1,11 @@
 @import "tailwindcss";
 @import "katex/dist/katex.min.css";
 
+/* Fix vertical alignment of inline math (e.g. \cdot) so it doesn't sit on baseline */
+.katex {
+  vertical-align: middle;
+}
+
 body {
   font-family: 'Inter', sans-serif;
 }
@@ -37,4 +42,15 @@ body {
 
 .flip-card-back {
   transform: rotateY(180deg);
+}
+
+.no-select {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  
+  -webkit-user-drag: none;
 }

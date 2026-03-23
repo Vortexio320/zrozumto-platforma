@@ -46,7 +46,8 @@ if not api_key:
     raise ValueError("GOOGLE_API_KEY not found in .env")
 
 client = genai.Client(api_key=api_key)
-MODEL_NAME = "gemini-3.1-flash-lite-preview"
+MODEL_NAME_LOW = "gemini-3.1-flash-lite-preview"
+MODEL_NAME_HIGH = "gemini-3.1-pro-preview"
 
 MIME_FALLBACKS = {".m4a": "audio/mp4", ".m4v": "video/mp4", ".webm": "video/webm"}
 
@@ -60,7 +61,7 @@ def _get_mime_type(path: str) -> str:
 
 def _call_gemini_json(prompt: str) -> str:
     response = client.models.generate_content(
-        model=MODEL_NAME,
+        model=MODEL_NAME_LOW,
         contents=[prompt],
         config=types.GenerateContentConfig(response_mime_type="application/json"),
     )
@@ -115,7 +116,7 @@ def generate_quiz_content(file_paths: list[str]):
         contents.append(prompt)
 
         response = client.models.generate_content(
-            model=MODEL_NAME,
+            model=MODEL_NAME_LOW,
             contents=contents,
             config=types.GenerateContentConfig(response_mime_type="application/json"),
         )
@@ -162,7 +163,7 @@ def generate_lesson_summary(file_paths: list[str]) -> dict:
         contents.append(prompt)
 
         response = client.models.generate_content(
-            model=MODEL_NAME,
+            model=MODEL_NAME_LOW,
             contents=contents,
             config=types.GenerateContentConfig(response_mime_type="application/json"),
         )
@@ -249,50 +250,6 @@ def generate_flashcards(quiz_context: list[dict]) -> str:
     return _call_gemini_json(prompt)
 
 
-def analyze_open_answer(question: str, image_base64: str) -> dict:
-    """Analyze a student's handwritten/drawn answer using Gemini vision."""
-    import base64
-    image_bytes = base64.b64decode(image_base64)
-
-    prompt = f"""Jesteś nauczycielem matematyki. Uczeń odpowiedział na pytanie otwarte, pisząc/rysując odpowiedź na tablicy.
-
-Pytanie: {question}
-
-Przeanalizuj obraz z odpowiedzią ucznia i oceń, czy jest poprawna.
-
-WAŻNE:
-- Dokładnie przeanalizuj to, co uczeń napisał/narysował na obrazie.
-- Oceń poprawność rozwiązania krok po kroku.
-- Jeśli odpowiedź jest częściowo poprawna, uznaj ją za niepoprawną, ale doceń poprawne elementy.
-- Bądź konstruktywny i motywujący w uzasadnieniu.
-- Jeśli odwołujesz się do wzorów lub wyrażeń matematycznych, użyj notacji LaTeX w $...$ (np. $x^2$, $\\frac{{1}}{{2}}$).
-- W JSON przed poleceniami LaTeX używaj podwójnego backslasha, np. \\\\frac{{4}}{{2}} zamiast \\frac.
-
-Format JSON:
-{{
-  "poprawna": true/false,
-  "uzasadnienie": "Szczegółowe uzasadnienie oceny..."
-}}"""
-
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=[
-            types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
-            prompt,
-        ],
-        config=types.GenerateContentConfig(response_mime_type="application/json"),
-    )
-    clean = response.text.replace("```json", "").replace("```", "").strip()
-    result = json.loads(clean)
-    uz = result.get("uzasadnienie", "")
-    uz = uz.replace("\\n", "\n")
-    uz = uz.replace("\\t", "\t")
-    if "\x0c" in uz:
-        uz = uz.replace("\x0c", "\\f")
-    result["uzasadnienie"] = uz
-    return result
-
-
 CONFIDENCE_LABELS = {
     1: "niska (uczeń zgadywał)",
     2: "średnia (uczeń nie był pewien)",
@@ -363,7 +320,7 @@ Format JSON:
 }}"""
 
         response = client.models.generate_content(
-            model=MODEL_NAME,
+            model=MODEL_NAME_HIGH,
             contents=[
                 types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
                 prompt,
@@ -401,7 +358,7 @@ Format JSON:
 }}"""
 
         response = client.models.generate_content(
-            model=MODEL_NAME,
+            model=MODEL_NAME_HIGH,
             contents=[
                 types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
                 prompt,
@@ -434,7 +391,7 @@ Format JSON:
 }}"""
 
         response = client.models.generate_content(
-            model=MODEL_NAME,
+            model=MODEL_NAME_HIGH,
             contents=[prompt],
             config=types.GenerateContentConfig(response_mime_type="application/json"),
         )
@@ -452,18 +409,12 @@ Format JSON:
     return result
 
 
-def generate_task_hint(zadanie: dict, hint_level: int = 1) -> dict:
-    """Generate a hint for a task without revealing the answer."""
+def generate_task_hints_pair(zadanie: dict) -> dict:
+    """Generate both hint levels in one call so they are distinct and properly graduated."""
     tresc = zadanie.get("tresc", "")
     odpowiedzi = zadanie.get("odpowiedzi", [])
     typ = zadanie.get("typ", "")
     podtyp = zadanie.get("podtyp", "")
-
-    level_instruction = (
-        "Daj DELIKATNĄ wskazówkę — wskaż kierunek myślenia, przypomnij odpowiedni wzór lub koncepcję, ale NIE podawaj odpowiedzi ani kolejnych kroków rozwiązania."
-        if hint_level == 1
-        else "Daj MOCNIEJSZĄ wskazówkę — pokaż pierwszy krok rozwiązania lub wskaż konkretną metodę, ale NIE podawaj końcowej odpowiedzi."
-    )
 
     prompt = f"""Jesteś cierpliwym nauczycielem matematyki. Uczeń potrzebuje pomocy z zadaniem egzaminacyjnym.
 
@@ -471,16 +422,22 @@ Zadanie ({typ} / {podtyp}):
 {tresc}
 {f"Warianty odpowiedzi: {json.dumps(odpowiedzi, ensure_ascii=False)}" if odpowiedzi else ""}
 
-{level_instruction}
+Wygeneruj DWIE kolejne wskazówki (uczeń zobaczy je jedna po drugiej). Muszą być RÓŻNE i stopniowane:
+
+1. hint_1 — DELIKATNA wskazówka: wskaż kierunek myślenia, przypomnij odpowiedni wzór lub koncepcję. NIE podawaj odpowiedzi ani kroków rozwiązania.
+
+2. hint_2 — MOCNIEJSZA wskazówka: pokaż pierwszy krok rozwiązania lub wskaż konkretną metodę. NIE podawaj końcowej odpowiedzi.
 
 WAŻNE:
-- NIE podawaj odpowiedzi!
+- hint_2 musi być MOCNIEJSZA niż hint_1 — pokazuj więcej, ale nadal nie zdradzaj odpowiedzi.
+- NIE podawaj odpowiedzi w żadnej z wskazówek!
 - Bądź motywujący i cierpliwy.
 - Użyj notacji LaTeX w $...$ dla wzorów. W JSON escapuj backslash: \\\\frac.
 
 Format JSON:
 {{
-  "hint": "Treść wskazówki..."
+  "hint_1": "Treść pierwszej (delikatnej) wskazówki...",
+  "hint_2": "Treść drugiej (mocniejszej) wskazówki..."
 }}"""
 
     raw = _call_gemini_json(prompt)
@@ -515,7 +472,12 @@ Format JSON:
   "steps": "Krok 1: ...\\nKrok 2: ...\\n...\\nOdpowiedź: ..."
 }}"""
 
-    raw = _call_gemini_json(prompt)
+    response = client.models.generate_content(
+        model=MODEL_NAME_HIGH,
+        contents=[prompt],
+        config=types.GenerateContentConfig(response_mime_type="application/json"),
+    )
+    raw = response.text
     clean = raw.replace("```json", "").replace("```", "").strip()
     result = json.loads(clean)
     result = fix_latex_in_structure(result)

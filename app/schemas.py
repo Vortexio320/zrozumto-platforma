@@ -68,16 +68,12 @@ class UpdateLessonRequest(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
 
-class OpenAnswerRequest(BaseModel):
-    question: str
-    image_base64: str
-
-
 class TaskCheckRequest(BaseModel):
     zadanie_id: str
     answer: Optional[str] = None
     image_base64: Optional[str] = None
     confidence: int = Field(2, ge=1, le=3)
+    hints_used: int = Field(0, ge=0, le=2)
 
 
 class TaskHintRequest(BaseModel):
@@ -87,3 +83,7 @@ class TaskHintRequest(BaseModel):
 
 class TaskWorkedExampleRequest(BaseModel):
     zadanie_id: str
+
+
+class LockSkillRequest(BaseModel):
+    skill_id: str

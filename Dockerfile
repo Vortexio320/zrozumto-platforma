@@ -14,6 +14,14 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    texlive-latex-base \
+    texlive-pictures \
+    texlive-latex-extra \
+    texlive-fonts-recommended \
+    lmodern \
+    cm-super \
+    poppler-data \
+    pdf2svg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

@@ -7,6 +7,7 @@ and manages the skill-based recommendation engine.
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 
+from ..ai import fix_latex_in_structure
 from ..dependencies import get_current_user
 from ..neo4j import get_neo4j
 from ..services import get_admin_supabase
@@ -14,6 +15,7 @@ from ..schemas import TaskCheckRequest, TaskHintRequest, TaskWorkedExampleReques
 from ..skill_engine import (
     fetch_dzialy,
     fetch_tasks_by_dzial,
+    fetch_all_tasks,
     fetch_random_task,
     fetch_skill_map,
     recommend_task,
@@ -59,6 +61,21 @@ def _get_recent_dzial_ids(attempts: list[dict], driver) -> list[int]:
         return [r["did"] for r in result]
 
 
+def _get_locked_skill_ids(user_id: str) -> set[str]:
+    """Fetch admin-locked skill IDs for a student."""
+    supabase = get_admin_supabase()
+    try:
+        res = (
+            supabase.table("student_skill_locks")
+            .select("skill_id")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        return {r["skill_id"] for r in (res.data or [])}
+    except Exception:
+        return set()
+
+
 # --- Endpoints ---
 
 
@@ -72,7 +89,8 @@ async def list_dzialy(user=Depends(get_current_user)):
 async def get_skill_map(user=Depends(get_current_user)):
     driver = _require_neo4j()
     attempts = _get_user_attempts(str(user.id))
-    return fetch_skill_map(driver, attempts)
+    locked = _get_locked_skill_ids(str(user.id))
+    return fetch_skill_map(driver, attempts, locked_skill_ids=locked)
 
 
 @router.get("/recommended")
@@ -83,6 +101,7 @@ async def get_recommended_task(
     driver = _require_neo4j()
     attempts = _get_user_attempts(str(user.id))
     recent_dzialy = _get_recent_dzial_ids(attempts, driver)
+    locked = _get_locked_skill_ids(str(user.id))
 
     task = recommend_task(
         driver=driver,
@@ -90,10 +109,11 @@ async def get_recommended_task(
         attempts=attempts,
         recent_dzial_ids=recent_dzialy,
         target_skill_id=skill_id,
+        locked_skill_ids=locked,
     )
     if not task:
         raise HTTPException(status_code=404, detail="No tasks available")
-    return task
+    return fix_latex_in_structure(task)
 
 
 @router.get("/random")
@@ -105,7 +125,7 @@ async def get_random_task(
     task = fetch_random_task(driver, dzial_id=dzial_id)
     if not task:
         raise HTTPException(status_code=404, detail="No tasks found")
-    return task
+    return fix_latex_in_structure(task)
 
 
 @router.get("/dzial/{dzial_id}")
@@ -116,7 +136,20 @@ async def list_tasks_in_dzial(
     user=Depends(get_current_user),
 ):
     driver = _require_neo4j()
-    return fetch_tasks_by_dzial(driver, dzial_id, skip=skip, limit=limit)
+    tasks = fetch_tasks_by_dzial(driver, dzial_id, skip=skip, limit=limit)
+    return fix_latex_in_structure(tasks)
+
+
+@router.get("/all")
+async def list_all_tasks(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    user=Depends(get_current_user),
+):
+    """Temporary: list all tasks from Neo4j."""
+    driver = _require_neo4j()
+    tasks = fetch_all_tasks(driver, skip=skip, limit=limit)
+    return fix_latex_in_structure(tasks)
 
 
 @router.get("/{zadanie_id}")
@@ -125,7 +158,7 @@ async def get_task(zadanie_id: str, user=Depends(get_current_user)):
     task = _fetch_zadanie_by_id(driver, zadanie_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    return task
+    return fix_latex_in_structure(task)
 
 
 @router.post("/check")
@@ -155,7 +188,7 @@ async def check_answer(req: TaskCheckRequest, user=Depends(get_current_user)):
     answer_data = {
         "answer": req.answer,
         "confidence": req.confidence,
-        "hints_used": 0,
+        "hints_used": req.hints_used,
         "image_submitted": req.image_base64 is not None and len(req.image_base64 or "") > 100,
     }
 
@@ -180,7 +213,7 @@ async def check_answer(req: TaskCheckRequest, user=Depends(get_current_user)):
 
 @router.post("/hint")
 async def get_hint(req: TaskHintRequest, user=Depends(get_current_user)):
-    from ..ai import generate_task_hint
+    from ..ai import generate_task_hints_pair
 
     driver = _require_neo4j()
     task = _fetch_zadanie_by_id(driver, req.zadanie_id)
@@ -188,7 +221,11 @@ async def get_hint(req: TaskHintRequest, user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Task not found")
 
     try:
-        return generate_task_hint(task, hint_level=req.hint_level)
+        pair = generate_task_hints_pair(task)
+        return {
+            "hint": pair.get("hint_1", ""),
+            "hint_2": pair.get("hint_2", ""),
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Hint generation failed: {str(e)}")
 

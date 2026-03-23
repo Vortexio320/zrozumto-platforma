@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { apiGet, apiDelete } from '../api/client';
+import { apiGet, apiPost, apiDelete } from '../api/client';
 import MathContent from './MathContent';
 import LessonEditModal from './LessonEditModal';
 import type {
@@ -38,6 +38,14 @@ export default function StudentProgressPanel({
     title: string;
     description: string;
   } | null>(null);
+  const [skillMapData, setSkillMapData] = useState<{
+    dzialy: { id: number; nazwa: string }[];
+    umiejetnosci: { id: string; opis: string; dzial_id: number }[];
+    mastery: Record<string, { status: string }>;
+  } | null>(null);
+  const [skillMapLoading, setSkillMapLoading] = useState(false);
+  const [skillMapExpanded, setSkillMapExpanded] = useState(false);
+  const [skillMapError, setSkillMapError] = useState<string | null>(null);
 
   const loadProgress = useCallback(async () => {
     setLoading(true);
@@ -75,6 +83,40 @@ export default function StudentProgressPanel({
   useEffect(() => {
     loadProgress();
   }, [loadProgress]);
+
+  const loadSkillMap = useCallback(async () => {
+    setSkillMapLoading(true);
+    setSkillMapError(null);
+    try {
+      const d = await apiGet<{
+        dzialy: { id: number; nazwa: string }[];
+        umiejetnosci: { id: string; opis: string; dzial_id: number }[];
+        mastery: Record<string, { status: string }>;
+      }>(`/admin/students/${studentId}/skill-map`);
+      setSkillMapData(d);
+    } catch {
+      setSkillMapError('Nie udało się pobrać mapy umiejętności.');
+    } finally {
+      setSkillMapLoading(false);
+    }
+  }, [studentId]);
+
+  async function toggleSkillLock(skillId: string, currentlyLocked: boolean) {
+    try {
+      if (currentlyLocked) {
+        await apiDelete(
+          `/admin/students/${studentId}/locked-skills/${encodeURIComponent(skillId)}`,
+        );
+      } else {
+        await apiPost(`/admin/students/${studentId}/lock-skill`, {
+          skill_id: skillId,
+        });
+      }
+      loadSkillMap();
+    } catch {
+      alert('Nie udało się zmienić blokady umiejętności.');
+    }
+  }
 
   function toggleQuizDetail(key: string) {
     setExpandedQuizzes(prev => {
@@ -207,6 +249,41 @@ export default function StudentProgressPanel({
             ))}
           </div>
         )}
+
+        {/* Zablokowane umiejętności */}
+        <div className="mt-8 border-t pt-6">
+          <button
+            onClick={() => {
+              const next = !skillMapExpanded;
+              setSkillMapExpanded(next);
+              if (next) loadSkillMap();
+            }}
+            className="flex items-center justify-between w-full text-left py-2"
+          >
+            <h3 className="text-base font-semibold text-gray-800">
+              Zablokowane umiejętności
+            </h3>
+            <span className="text-gray-400 text-sm">
+              {skillMapExpanded ? '▲' : '▼'}
+            </span>
+          </button>
+          {skillMapExpanded && (
+            <div className="mt-4">
+              {skillMapLoading ? (
+                <div className="animate-pulse bg-gray-200 h-16 rounded-lg" />
+              ) : skillMapError ? (
+                <p className="text-red-500 text-sm">{skillMapError}</p>
+              ) : skillMapData ? (
+                <LockedSkillsSection
+                  dzialy={skillMapData.dzialy}
+                  umiejetnosci={skillMapData.umiejetnosci}
+                  mastery={skillMapData.mastery}
+                  onToggleLock={toggleSkillLock}
+                />
+              ) : null}
+            </div>
+          )}
+        </div>
       </div>
 
       {editingLesson && (
@@ -226,6 +303,72 @@ export default function StudentProgressPanel({
 }
 
 // --- Sub-components ---
+
+interface LockedSkillsSectionProps {
+  dzialy: { id: number; nazwa: string }[];
+  umiejetnosci: { id: string; opis: string; dzial_id: number }[];
+  mastery: Record<string, { status: string }>;
+  onToggleLock: (skillId: string, currentlyLocked: boolean) => void;
+}
+
+function LockedSkillsSection({
+  dzialy,
+  umiejetnosci,
+  mastery,
+  onToggleLock,
+}: LockedSkillsSectionProps) {
+  const skillsByDzial = new Map<number, typeof umiejetnosci>();
+  for (const u of umiejetnosci) {
+    const arr = skillsByDzial.get(u.dzial_id) || [];
+    arr.push(u);
+    skillsByDzial.set(u.dzial_id, arr);
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-gray-500 mb-3">
+        Włącz blokadę, aby uczeń nie mógł ćwiczyć danej umiejętności.
+      </p>
+      {dzialy.map(dzial => {
+        const skills = skillsByDzial.get(dzial.id) || [];
+        if (skills.length === 0) return null;
+        return (
+          <div key={dzial.id} className="border rounded-lg overflow-hidden">
+            <div className="px-3 py-2 bg-gray-50 font-medium text-sm text-gray-700">
+              {dzial.nazwa}
+            </div>
+            <div className="divide-y divide-gray-100">
+              {skills.map(skill => {
+                const isLocked = mastery[skill.id]?.status === 'locked';
+                return (
+                  <div
+                    key={skill.id}
+                    className="flex items-center justify-between px-3 py-2 hover:bg-gray-50"
+                  >
+                    <MathContent className="text-sm text-gray-800 line-clamp-1 flex-1 min-w-0">
+                      {skill.opis}
+                    </MathContent>
+                    <label className="flex items-center gap-2 shrink-0 ml-3 cursor-pointer">
+                      <span className="text-xs text-gray-500">
+                        {isLocked ? 'Zablokowana' : 'Dostępna'}
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={isLocked}
+                        onChange={() => onToggleLock(skill.id, isLocked)}
+                        className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                      />
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 interface LessonProgressCardProps {
   lesson: ProgressLesson;

@@ -2,7 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from ..dependencies import require_admin
 from ..services import get_admin_supabase
 from ..ai import fix_latex_in_structure
-from ..schemas import CreateUserRequest, UpdateLessonRequest, UpdateStudentRequest, OpenAnswerRequest
+from ..schemas import CreateUserRequest, UpdateLessonRequest, UpdateStudentRequest, LockSkillRequest
+from ..skill_engine import fetch_skill_map
+from ..neo4j import get_neo4j
 import os
 
 EMAIL_DOMAIN = os.environ.get("USER_EMAIL_DOMAIN", "zrozum-to.pl")
@@ -191,6 +193,102 @@ async def get_student_progress(student_id: str, admin = Depends(require_admin)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+def _get_student_attempts(user_id: str) -> list:
+    supabase = get_admin_supabase()
+    res = (
+        supabase.table("task_attempts")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return res.data or []
+
+
+def _get_locked_skill_ids(user_id: str) -> set:
+    supabase = get_admin_supabase()
+    try:
+        res = (
+            supabase.table("student_skill_locks")
+            .select("skill_id")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        return {r["skill_id"] for r in (res.data or [])}
+    except Exception:
+        return set()
+
+
+@router.get("/students/{user_id}/skill-map")
+async def get_student_skill_map(user_id: str, admin=Depends(require_admin)):
+    """Return full skill map for a student (for admin lock/unlock UI)."""
+    driver = get_neo4j()
+    if not driver:
+        raise HTTPException(status_code=503, detail="Neo4j not available")
+    attempts = _get_student_attempts(user_id)
+    locked = _get_locked_skill_ids(user_id)
+    return fetch_skill_map(driver, attempts, locked_skill_ids=locked)
+
+
+@router.get("/students/{user_id}/locked-skills")
+async def list_locked_skills(user_id: str, admin=Depends(require_admin)):
+    """Return skill IDs locked for this student by admin."""
+    supabase = get_admin_supabase()
+    try:
+        res = (
+            supabase.table("student_skill_locks")
+            .select("skill_id")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        return {"skill_ids": [r["skill_id"] for r in (res.data or [])]}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/students/{user_id}/lock-skill")
+async def lock_skill(
+    user_id: str,
+    req: LockSkillRequest,
+    admin=Depends(require_admin),
+):
+    """Lock a skill for a student (admin only)."""
+    supabase = get_admin_supabase()
+    try:
+        supabase.table("student_skill_locks").upsert(
+            {
+                "user_id": user_id,
+                "skill_id": req.skill_id,
+                "locked_by": str(admin.id),
+            },
+            on_conflict="user_id,skill_id",
+        ).execute()
+        return {"status": "success", "skill_id": req.skill_id}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/students/{user_id}/locked-skills/{skill_id}")
+async def unlock_skill(
+    user_id: str,
+    skill_id: str,
+    admin=Depends(require_admin),
+):
+    """Unlock a skill for a student (admin only)."""
+    supabase = get_admin_supabase()
+    try:
+        res = (
+            supabase.table("student_skill_locks")
+            .delete()
+            .eq("user_id", user_id)
+            .eq("skill_id", skill_id)
+            .execute()
+        )
+        return {"status": "success", "skill_id": skill_id}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.delete("/quizzes/{quiz_id}")
 async def delete_quiz(quiz_id: str, admin = Depends(require_admin)):
     supabase = get_admin_supabase()
@@ -204,16 +302,6 @@ async def delete_quiz(quiz_id: str, admin = Depends(require_admin)):
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.post("/whiteboard/analyze")
-async def analyze_whiteboard(req: OpenAnswerRequest, admin=Depends(require_admin)):
-    from ..ai import analyze_open_answer
-    try:
-        result = analyze_open_answer(req.question, req.image_base64)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)}")
 
 
 @router.patch("/lessons/{lesson_id}")

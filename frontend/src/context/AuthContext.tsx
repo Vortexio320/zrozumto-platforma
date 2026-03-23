@@ -6,11 +6,10 @@ import {
   useCallback,
   type ReactNode,
 } from 'react';
-import { configureApi, loginApi } from '../api/client';
+import { configureApi, loginApi, logoutApi, authMe } from '../api/client';
 import type { UserInfo } from '../types';
 
 interface AuthContextValue {
-  token: string | null;
   user: UserInfo | null;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
@@ -20,27 +19,35 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(
-    () => sessionStorage.getItem('access_token'),
-  );
-  const [user, setUser] = useState<UserInfo | null>(() => {
-    const saved = sessionStorage.getItem('user_info');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [user, setUser] = useState<UserInfo | null>(null);
 
-  const logout = useCallback(() => {
-    setToken(null);
+  const logout = useCallback(async () => {
     setUser(null);
-    sessionStorage.removeItem('access_token');
-    sessionStorage.removeItem('user_info');
+    try {
+      await logoutApi();
+    } catch {
+      // Ignore logout API errors
+    }
   }, []);
 
   useEffect(() => {
-    configureApi({
-      getToken: () => token,
-      onUnauthorized: logout,
+    configureApi({ onUnauthorized: logout });
+  }, [logout]);
+
+  useEffect(() => {
+    authMe().then((me) => {
+      if (me) {
+        setUser({
+          id: me.id,
+          username: me.username,
+          role: me.role as UserInfo['role'],
+          full_name: me.full_name,
+          school_type: me.school_type,
+          class: me.class,
+        });
+      }
     });
-  }, [token, logout]);
+  }, []);
 
   const login = useCallback(async (username: string, password: string) => {
     const data = await loginApi(username, password);
@@ -52,22 +59,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       school_type: data.user.school_type,
       class: data.user.class,
     };
-    const newToken = data.access_token;
-    setToken(newToken);
     setUser(userInfo);
-    sessionStorage.setItem('access_token', newToken);
-    sessionStorage.setItem('user_info', JSON.stringify(userInfo));
-    // Configure API immediately so DashboardView's first fetch has the token (avoids effect race)
-    configureApi({
-      getToken: () => newToken,
-      onUnauthorized: logout,
-    });
-  }, [logout]);
+  }, []);
 
   const isAdmin = user?.role === 'admin';
 
   return (
-    <AuthContext.Provider value={{ token, user, login, logout, isAdmin }}>
+    <AuthContext.Provider value={{ user, login, logout, isAdmin }}>
       {children}
     </AuthContext.Provider>
   );

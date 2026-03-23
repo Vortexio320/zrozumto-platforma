@@ -2,9 +2,10 @@ import { useAuth } from '../context/AuthContext';
 
 interface NavbarProps {
   onNavigate: (view: string) => void;
+  canAccessTasks?: boolean;
 }
 
-export default function Navbar({ onNavigate }: NavbarProps) {
+export default function Navbar({ onNavigate, canAccessTasks }: NavbarProps) {
   const { user, logout, isAdmin } = useAuth();
 
   return (
@@ -20,6 +21,14 @@ export default function Navbar({ onNavigate }: NavbarProps) {
       </div>
       {user && (
         <div className="flex items-center gap-4">
+          {canAccessTasks && !isAdmin && (
+            <button
+              onClick={() => onNavigate('tasks')}
+              className="text-sm bg-indigo-100 hover:bg-indigo-200 text-indigo-700 py-1.5 px-3 rounded-lg font-medium transition"
+            >
+              Zadania
+            </button>
+          )}
           {isAdmin && (
             <button
               onClick={() => onNavigate('admin')}

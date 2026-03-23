@@ -44,7 +44,16 @@ app.include_router(tasks.router)
 
 
 from pathlib import Path
-from fastapi.responses import FileResponse
+import base64
+import logging
+import re
+import subprocess
+import tempfile
+import uuid
+from fastapi import Body
+from fastapi.responses import FileResponse, HTMLResponse, Response
+
+logger = logging.getLogger(__name__)
 
 # ... (Previous code)
 
@@ -63,6 +72,90 @@ async def neo4j_status():
         return {"connected": True}
     except Exception as e:
         return {"connected": False, "message": str(e)}
+
+import re
+
+def _prepare_tikz(raw: str) -> str:
+    """Sanitize TikZ code for web-based compilation."""
+    raw = re.sub(r'\\n(?![a-zA-Z])', '\n', raw)
+    raw = re.sub(r'\\t(?![a-zA-Z])', '\t', raw)
+    raw = raw.replace('\u00A0', ' ')
+
+    
+    _PL_MAP = str.maketrans("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ", "acelnoszzACELNOSZZ")
+    raw = raw.translate(_PL_MAP)
+    
+    #raw = raw.replace("font=\\sffamily", "").replace("font=\\sansmath", "")
+    #raw = re.sub(r",\s*font=[^,\]]+", "", raw)
+    #raw = re.sub(r"font=[^,\]]+,\s*", "", raw)
+    #raw = re.sub(r"font=[^,\]\}]+", "", raw)
+    
+    if "\\begin{center}" in raw:
+        raw = raw.replace("\\begin{center}", "").replace("\\end{center}", "").strip()
+    
+    
+    return raw
+
+
+# TikZ to SVG (server-side pdflatex + pdf2svg) - reliable, no nullfont
+@app.post("/api/tikz-svg")
+async def tikz_to_svg(t: str = Body(..., embed=True)):
+    try:
+        raw = base64.b64decode(t, validate=True).decode("utf-8")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64")
+    
+    tikz = _prepare_tikz(raw)
+    if not tikz.strip():
+        raise HTTPException(status_code=400, detail="Empty TikZ")
+
+    name = f"tikz_{uuid.uuid4().hex[:12]}"
+    with tempfile.TemporaryDirectory() as tmp:
+        tex_path = Path(tmp) / f"{name}.tex"
+        
+        # CZYSTY pdflatex. Żadnego wpisu 'dvisvgm' w nawiasach kwadratowych.
+        tex_path.write_text(
+            r"""\documentclass[tikz,border=20pt]{standalone}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{angles,quotes,calc,matrix,arrows.meta,positioning}
+\begin{document}
+"""
+            + tikz
+            + r"""
+\end{document}
+""",
+            encoding="utf-8",
+        )
+        
+        # 1. Kompilacja do twardego PDF. On nigdy nie gubi współrzędnych.
+        pdflatex = subprocess.run(
+            ["pdflatex", "-interaction=nonstopmode", "-halt-on-error", str(tex_path)],
+            cwd=tmp, capture_output=True, text=True, timeout=30
+        )
+        pdf_path = Path(tmp) / f"{name}.pdf"
+        if not pdf_path.exists():
+            log_preview = (pdflatex.stdout or "") + (pdflatex.stderr or "")
+            raise HTTPException(status_code=422, detail=f"pdflatex failed: {log_preview[-500:]}")
+
+        # 2. Konwersja na SVG za pomocą pdf2svg (które działa, bo masz już poppler-data w systemie)
+        svg_path = Path(tmp) / f"{name}.svg"
+        pdf2svg = subprocess.run(
+            ["pdf2svg", str(pdf_path), str(svg_path)],
+            cwd=tmp, capture_output=True, text=True, timeout=10
+        )
+        
+        if not svg_path.exists() or pdf2svg.returncode != 0:
+            err = (pdf2svg.stdout or "") + (pdf2svg.stderr or "")
+            raise HTTPException(status_code=500, detail=f"pdf2svg error: {err}")
+
+        svg_content = svg_path.read_text(encoding="utf-8")
+        
+    return Response(content=svg_content, media_type="image/svg+xml")
 
 # Config endpoint for frontend (Supabase anon key - no auth required)
 @app.get("/api/config")
