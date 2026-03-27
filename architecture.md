@@ -85,6 +85,7 @@ zrozumto-platforma/
 ├── docker-compose.yml
 ├── Dockerfile
 ├── README.md
+├── .env.example             # Szablon zmiennych (bez sekretów)
 └── .env                     # Sekrety (gitignore)
 ```
 
