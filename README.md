@@ -14,7 +14,29 @@
 </p>
 
 ---
+## 🖼️ Preview
 
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/03182285-be16-44d7-83ea-6edfd8bf8d65" width="550">
+  <br>
+  <em><strong>Biggest Feature:</strong> Interactive scratch canvas for tasks with automated visual validation powered by <strong>Google Gemini Vision</strong>. Features real-time TikZ/LaTeX diagram rendering. Offers optional 2 hints and if the solution is wrong: worked example of the task</em>
+</p>
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/97a8e5e9-53ea-47d8-ba61-2dd52fd524cf" width="550">
+  <br>
+  <em>Dynamic <strong>Skill Map</strong> powered by a <strong>Neo4j graph database</strong>. The system visualizes student progress and provides personalized task recommendations based on mastered competencies.</em>
+</p>
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/81679479-c908-4bac-a374-f4067ab85ed4" width="550">
+  <br>
+  <em>Main <strong>Student Dashboard</strong> (React) showing assigned lessons, AI-generated quizzes.</em>
+</p>
+
+
+
+---
 ## Features
 
 - **Lesson & quiz workflow** — Upload-based **quiz generation** from lesson materials, results tracking, **AI analysis** of answers, **flashcards**, and **“more questions”** flows that spawn new quizzes with configurable difficulty.
@@ -38,7 +60,7 @@
 | **Backend**  | FastAPI, Uvicorn, Pydantic, Supabase Python client, `google-genai`, Neo4j driver |
 | **Data**     | Supabase (Postgres + auth), Neo4j (skill graph) |
 | **AI**       | Google Gemini (quizzes, analysis, task check, hints, examples) |
-| **Ops**      | Docker / Docker Compose (API + Neo4j + optional n8n) |
+| **Ops**      | Docker / Docker Compose (API + Neo4j + n8n) |
 
 For more detail, see [`architecture.md`](architecture.md).
 
@@ -114,6 +136,3 @@ Treat **`.env`** as secret—never commit it. Rotate **API keys** if exposed.
 
 ---
 
-## License
-
-Add a `LICENSE` file if you plan to open-source this repository.
