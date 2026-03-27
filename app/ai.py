@@ -277,7 +277,12 @@ def check_task_answer(
     typ = zadanie.get("typ", "")
     podtyp = zadanie.get("podtyp", "")
     punkty = zadanie.get("punkty", 1)
-    tikz = zadanie.get("tikz", "")
+    tikz_append = _prompt_tikz_appendix(zadanie.get("tikz", ""))
+    check_tikz_rule = (
+        "- Odwołuj się do diagramu z kodu TikZ powyżej (etykiety, kształty, dane z kodu).\n"
+        if tikz_append
+        else ""
+    )
 
     conf_label = CONFIDENCE_LABELS.get(confidence, CONFIDENCE_LABELS[2])
 
@@ -288,8 +293,7 @@ Treść: {tresc}"""
 
     if odpowiedzi:
         task_description += f"\nWarianty odpowiedzi: {json.dumps(odpowiedzi, ensure_ascii=False)}"
-    if tikz:
-        task_description += f"\n(Zadanie zawiera rysunek pomocniczy w TikZ)"
+    task_description += tikz_append
 
     has_image = image_base64 is not None and len(image_base64) > 100
 
@@ -305,18 +309,16 @@ Przeanalizuj obraz z odpowiedzią ucznia i oceń:
 
 WAŻNE:
 - Dokładnie przeanalizuj to, co uczeń napisał/narysował.
-- Oceń poprawność rozwiązania krok po kroku.
-- Jeśli odpowiedź jest częściowo poprawna, uznaj ją za niepoprawną, ale doceń poprawne elementy.
-- Bądź konstruktywny i motywujący.
-- Jeśli pewność była wysoka a odpowiedź błędna, wskaż konkretne błędne przekonanie.
-- Jeśli pewność była niska a odpowiedź poprawna, wzmocnij zrozumienie.
+{check_tikz_rule}
+- Oceń poprawność rozwiązania.
+- Jeśli odpowiedź jest częściowo poprawna, uznaj ją za niepoprawną.
 - Użyj notacji LaTeX w $...$ dla wzorów. W JSON escapuj backslash: \\\\frac.
 
 Format JSON:
 {{
   "poprawna_odpowiedz": true/false,
   "poprawne_rozumowanie": true/false,
-  "uzasadnienie": "Szczegółowe uzasadnienie oceny..."
+  "uzasadnienie": "Uzasadnienie max 2 zdania, jeśli poprawna_odpowiedz=true i poprawne_rozumowanie=true (np. 'OK. Odpowiedź i rozumowanie są poprawne.'). Jeśli cokolwiek jest false: max 4 zdania, 1 zdanie diagnozy (co nie pasuje) + 1-2 zdania jak poprawić (bez długiego toku i bez ogólnych pochwał)."
 }}"""
 
         response = client.models.generate_content(
@@ -343,18 +345,15 @@ Oceń ODDZIELNIE:
 2. Czy rozumowanie pokazane na tablicy jest poprawne i prowadzi do właściwego wyniku?
 
 WAŻNE SCENARIUSZE:
-- Poprawna odpowiedź + poprawne rozumowanie = pełne opanowanie. Pochwal ucznia.
-- Poprawna odpowiedź + BŁĘDNE rozumowanie = uczeń trafił, ale rozumowanie jest wadliwe. Wyjaśnij błąd w rozumowaniu i pokaż prawidłowy tok myślenia. To ważne — zgadywanie to nie nauka.
-- Błędna odpowiedź + częściowo poprawne rozumowanie = doceń dobre elementy i wskaż gdzie nastąpił błąd.
-- Błędna odpowiedź + błędne rozumowanie = wyjaśnij prawidłowe podejście od podstaw.
-
-Bądź konstruktywny i motywujący. Użyj notacji LaTeX w $...$ dla wzorów. W JSON escapuj backslash: \\\\frac.
+- Oceń poprawność odpowiedzi i rozumowania (nie zakładaj, że skoro odpowiedź jest poprawna, to rozumowanie też).
+{check_tikz_rule}
+- Użyj notacji LaTeX w $...$ dla wzorów. W JSON escapuj backslash: \\\\frac.
 
 Format JSON:
 {{
   "poprawna_odpowiedz": true/false,
   "poprawne_rozumowanie": true/false,
-  "uzasadnienie": "Szczegółowe uzasadnienie..."
+  "uzasadnienie": "Jeśli poprawna_odpowiedz=true oraz poprawne_rozumowanie=true: max 2 zdania (krótki werdykt typu 'OK.'). Jeśli którakolwiek część jest niepoprawna: max 4 zdania, 1 zdanie diagnozy (czy problem jest w odpowiedzi czy w rozumowaniu) + 1-3 zdania bezpośredniej korekty (co powinno być inaczej). Bez ogólnych pochwał i bez długiego toku myślenia."
 }}"""
 
         response = client.models.generate_content(
@@ -376,18 +375,17 @@ Pewność ucznia: {conf_label}
 Oceń, czy odpowiedź jest poprawna.
 
 WAŻNE:
-- Wyjaśnij DLACZEGO odpowiedź jest poprawna lub niepoprawna.
-- Jeśli odpowiedź jest błędna, wyjaśnij prawidłowe rozwiązanie krok po kroku.
-- Jeśli pewność była wysoka a odpowiedź błędna, wskaż konkretne błędne przekonanie ucznia.
-- Jeśli pewność była niska a odpowiedź poprawna, wzmocnij zrozumienie ("Dobrze! Oto dlaczego...").
-- Bądź konstruktywny i motywujący.
+- Wyjaśnij krótko: dlaczego odpowiedź jest poprawna albo co jest błędem.
+{check_tikz_rule}
+- Bez 'krok po kroku' i bez długiego toku myślenia.
+- Jeśli odpowiedź jest błędna, podaj 1 kluczową korektę/podejście (bez pełnego rozwiązania).
 - Użyj notacji LaTeX w $...$ dla wzorów. W JSON escapuj backslash: \\\\frac.
 
 Format JSON:
 {{
   "poprawna_odpowiedz": true/false,
   "poprawne_rozumowanie": null,
-  "uzasadnienie": "Szczegółowe uzasadnienie..."
+  "uzasadnienie": "Jeśli poprawna_odpowiedz=true: max 2 zdania (krótki werdykt + 1 zdanie 'dlaczego'). Jeśli poprawna_odpowiedz=false: max 4 zdania, 1 zdanie diagnozy + 1-3 zdania bezpośredniej korekty/podejścia. Bez ogólnych pochwał."
 }}"""
 
         response = client.models.generate_content(
@@ -409,18 +407,32 @@ Format JSON:
     return result
 
 
+def _prompt_tikz_appendix(tikz: str) -> str:
+    """Minimal lead-in + raw TikZ source for Gemini (as stored on the task)."""
+    body = (tikz or "").strip()
+    if not body:
+        return ""
+    return "\n\nPoniżej kod TikZ diagramu z treści zadania:\n" + body
+
+
 def generate_task_hints_pair(zadanie: dict) -> dict:
     """Generate both hint levels in one call so they are distinct and properly graduated."""
     tresc = zadanie.get("tresc", "")
     odpowiedzi = zadanie.get("odpowiedzi", [])
     typ = zadanie.get("typ", "")
     podtyp = zadanie.get("podtyp", "")
+    tikz_append = _prompt_tikz_appendix(zadanie.get("tikz", ""))
+    hint_tikz_rule = (
+        "- Odwołuj się do diagramu z kodu TikZ powyżej (etykiety, kształty, dane z kodu).\n"
+        if tikz_append
+        else ""
+    )
 
     prompt = f"""Jesteś cierpliwym nauczycielem matematyki. Uczeń potrzebuje pomocy z zadaniem egzaminacyjnym.
 
 Zadanie ({typ} / {podtyp}):
 {tresc}
-{f"Warianty odpowiedzi: {json.dumps(odpowiedzi, ensure_ascii=False)}" if odpowiedzi else ""}
+{f"Warianty odpowiedzi: {json.dumps(odpowiedzi, ensure_ascii=False)}" if odpowiedzi else ""}{tikz_append}
 
 Wygeneruj DWIE kolejne wskazówki (uczeń zobaczy je jedna po drugiej). Muszą być RÓŻNE i stopniowane:
 
@@ -431,7 +443,7 @@ Wygeneruj DWIE kolejne wskazówki (uczeń zobaczy je jedna po drugiej). Muszą b
 WAŻNE:
 - hint_2 musi być MOCNIEJSZA niż hint_1 — pokazuj więcej, ale nadal nie zdradzaj odpowiedzi.
 - NIE podawaj odpowiedzi w żadnej z wskazówek!
-- Bądź motywujący i cierpliwy.
+{hint_tikz_rule}- Bądź motywujący i cierpliwy.
 - Użyj notacji LaTeX w $...$ dla wzorów. W JSON escapuj backslash: \\\\frac.
 
 Format JSON:
@@ -453,15 +465,21 @@ def generate_worked_example(zadanie: dict) -> dict:
     odpowiedzi = zadanie.get("odpowiedzi", [])
     typ = zadanie.get("typ", "")
     podtyp = zadanie.get("podtyp", "")
+    tikz_append = _prompt_tikz_appendix(zadanie.get("tikz", ""))
+    tikz_zasada = (
+        "- Odczytaj diagram z dołączonego kodu TikZ (etykiety, kształty, współrzędne) i uwzględnij go w każdym kroku.\n"
+        if tikz_append
+        else ""
+    )
 
     prompt = f"""Jesteś najlepszym nauczycielem matematyki. Rozwiąż to zadanie egzaminacyjne krok po kroku.
 
 Zadanie ({typ} / {podtyp}):
 {tresc}
-{f"Warianty odpowiedzi: {json.dumps(odpowiedzi, ensure_ascii=False)}" if odpowiedzi else ""}
+{f"Warianty odpowiedzi: {json.dumps(odpowiedzi, ensure_ascii=False)}" if odpowiedzi else ""}{tikz_append}
 
 ZASADY:
-- Rozwiąż KROK PO KROKU, numerując każdy krok.
+{tikz_zasada}- Rozwiąż KROK PO KROKU, numerując każdy krok.
 - Wyjaśnij KAŻDY krok prostym językiem, jakbyś tłumaczył 14-latkowi.
 - Pokaż tok rozumowania — dlaczego wybieramy daną metodę.
 - Na końcu podaj ostateczną odpowiedź.

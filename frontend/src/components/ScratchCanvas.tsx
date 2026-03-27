@@ -144,7 +144,15 @@ const ScratchCanvas = forwardRef<ScratchCanvasHandle, ScratchCanvasProps>(
               </button>
               <button
                 type="button"
-                onClick={() => canvasRef.current?.clearCanvas()}
+                onClick={() => canvasRef.current?.redo()}
+                className="px-2 py-1 mx-2 rounded text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition"
+              >
+                Ponów
+              </button>
+              {/* resetCanvas not clearCanvas: library ties next undo to restoring pre-clear snapshot */}
+              <button
+                type="button"
+                onClick={() => canvasRef.current?.resetCanvas()}
                 className="px-2 py-1 mx-2 rounded text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100 transition"
               >
                 Wyczyść

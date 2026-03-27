@@ -166,20 +166,20 @@ export default function TaskRenderer({ task, onNext }: TaskRendererProps) {
         </div>
       )}
 
-      {/* Answer input based on podtyp */}
+      {/* Closed task options stay visible after Sprawdź (read-only when result is set) */}
+      {!isOpen && (
+        <div className="mt-4">
+          <ClosedTaskInput
+            task={task}
+            answer={answer}
+            onAnswer={setAnswer}
+            disabled={!!result}
+          />
+        </div>
+      )}
+
       {!result && (
         <>
-          {isOpen ? null : (
-            <div className="mt-4">
-              <ClosedTaskInput
-                task={task}
-                answer={answer}
-                onAnswer={setAnswer}
-              />
-            </div>
-          )}
-
-
           {/* Hint + Confidence row */}
           <div className="mt-4 flex flex-wrap items-end gap-4">
             <div className="flex-1 min-w-[200px]">
@@ -249,7 +249,7 @@ export default function TaskRenderer({ task, onNext }: TaskRendererProps) {
             <button
               onClick={handleWorkedExample}
               disabled={workedExampleLoading}
-              className="px-5 py-2.5 rounded-lg text-sm font-semibold border transition bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 disabled:opacity-50"
+              className="px-5 py-2.5 mx-2 rounded-lg text-sm font-semibold border transition bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 disabled:opacity-50"
             >
               {workedExampleLoading
                 ? 'Generuję rozwiązanie...'
@@ -290,27 +290,29 @@ interface ClosedTaskInputProps {
   task: Zadanie;
   answer: string | null;
   onAnswer: (a: string) => void;
+  disabled?: boolean;
 }
 
-function ClosedTaskInput({ task, answer, onAnswer }: ClosedTaskInputProps) {
+function ClosedTaskInput({ task, answer, onAnswer, disabled }: ClosedTaskInputProps) {
+  const props = { task, answer, onAnswer, disabled };
   switch (task.podtyp) {
     case 'wielokrotny wybor':
-      return <WielokrotnyWybor task={task} answer={answer} onAnswer={onAnswer} />;
+      return <WielokrotnyWybor {...props} />;
     case 'prawda/falsz':
-      return <PrawdaFalsz task={task} answer={answer} onAnswer={onAnswer} />;
+      return <PrawdaFalsz {...props} />;
     case 'dobieranie':
-      return <Dobieranie task={task} answer={answer} onAnswer={onAnswer} />;
+      return <Dobieranie {...props} />;
     case 'wybor uzasadnienia':
-      return <WyborUzasadnienia task={task} answer={answer} onAnswer={onAnswer} />;
+      return <WyborUzasadnienia {...props} />;
     default:
-      return <WielokrotnyWybor task={task} answer={answer} onAnswer={onAnswer} />;
+      return <WielokrotnyWybor {...props} />;
   }
 }
 
 
 /* ── wielokrotny wybor ── */
 
-function WielokrotnyWybor({ task, answer, onAnswer }: ClosedTaskInputProps) {
+function WielokrotnyWybor({ task, answer, onAnswer, disabled = false }: ClosedTaskInputProps) {
   return (
     <div className="space-y-2">
       {task.odpowiedzi.map((opt, i) => {
@@ -318,11 +320,13 @@ function WielokrotnyWybor({ task, answer, onAnswer }: ClosedTaskInputProps) {
         return (
           <button
             key={i}
+            type="button"
+            disabled={disabled}
             onClick={() => onAnswer(letter)}
-            className={`w-full text-left px-4 py-3 rounded-xl border transition flex items-start gap-3 ${
+            className={`w-full text-left px-4 py-3 rounded-xl border transition flex items-start gap-3 disabled:cursor-not-allowed ${
               answer === letter
                 ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200'
-                : 'border-gray-200 bg-white hover:bg-gray-50'
+                : 'border-gray-200 bg-white enabled:hover:bg-gray-50'
             }`}
           >
             <span
@@ -347,7 +351,7 @@ function WielokrotnyWybor({ task, answer, onAnswer }: ClosedTaskInputProps) {
 
 /* ── prawda/falsz ── */
 
-function PrawdaFalsz({ task, answer, onAnswer }: ClosedTaskInputProps) {
+function PrawdaFalsz({ task, answer, onAnswer, disabled = false }: ClosedTaskInputProps) {
   const statements = task.odpowiedzi.map(o =>
     o.replace(/\s*-\s*P\/F\s*$/, '').trim(),
   );
@@ -357,6 +361,7 @@ function PrawdaFalsz({ task, answer, onAnswer }: ClosedTaskInputProps) {
     : statements.map(() => null);
 
   function toggle(idx: number, val: 'P' | 'F') {
+    if (disabled) return;
     const next = [...parsed];
     next[idx] = val;
     onAnswer(next.map(v => v ?? '').join(', '));
@@ -378,13 +383,15 @@ function PrawdaFalsz({ task, answer, onAnswer }: ClosedTaskInputProps) {
             {(['P', 'F'] as const).map(val => (
               <button
                 key={val}
+                type="button"
+                disabled={disabled}
                 onClick={() => toggle(i, val)}
-                className={`w-10 h-10 rounded-lg text-sm font-bold transition ${
+                className={`w-10 h-10 rounded-lg text-sm font-bold transition disabled:cursor-not-allowed ${
                   parsed[i] === val
                     ? val === 'P'
                       ? 'bg-green-600 text-white'
                       : 'bg-red-500 text-white'
-                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    : 'bg-gray-100 text-gray-500 enabled:hover:bg-gray-200'
                 }`}
               >
                 {val}
@@ -400,11 +407,12 @@ function PrawdaFalsz({ task, answer, onAnswer }: ClosedTaskInputProps) {
 
 /* ── dobieranie ── */
 
-function Dobieranie({ task, answer, onAnswer }: ClosedTaskInputProps) {
+function Dobieranie({ task, answer, onAnswer, disabled = false }: ClosedTaskInputProps) {
   const groups = splitOptionGroups(task.odpowiedzi);
   const selections = answer ? answer.split(', ') : groups.map(() => '');
 
   function select(groupIdx: number, letter: string) {
+    if (disabled) return;
     const next = [...selections];
     while (next.length < groups.length) next.push('');
     next[groupIdx] = letter;
@@ -424,11 +432,13 @@ function Dobieranie({ task, answer, onAnswer }: ClosedTaskInputProps) {
               return (
                 <button
                   key={opt}
+                  type="button"
+                  disabled={disabled}
                   onClick={() => select(gi, letter)}
-                  className={`px-4 py-2.5 rounded-xl border transition text-sm font-medium ${
+                  className={`px-4 py-2.5 rounded-xl border transition text-sm font-medium disabled:cursor-not-allowed ${
                     selections[gi] === letter
                       ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200 text-indigo-700'
-                      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                      : 'border-gray-200 bg-white text-gray-700 enabled:hover:bg-gray-50'
                   }`}
                 >
                   <MathContent>
@@ -505,13 +515,14 @@ function parseWyborUzasadnienia(odpowiedzi: string[]): {
   return { answerOpts, connector, justOpts };
 }
 
-function WyborUzasadnienia({ task, answer, onAnswer }: ClosedTaskInputProps) {
+function WyborUzasadnienia({ task, answer, onAnswer, disabled = false }: ClosedTaskInputProps) {
   const { answerOpts, connector, justOpts } = parseWyborUzasadnienia(task.odpowiedzi);
 
   const selectedAns = answer?.match(/^([A-Z])/)?.[1] ?? null;
   const selectedJust = answer?.match(/(\d+)$/)?.[1] ?? null;
 
   function update(ans: string | null, just: string | null) {
+    if (disabled) return;
     if (ans && just) {
       onAnswer(`${ans}${just}`);
     } else if (ans) {
@@ -535,11 +546,13 @@ function WyborUzasadnienia({ task, answer, onAnswer }: ClosedTaskInputProps) {
             return (
               <button
                 key={i}
+                type="button"
+                disabled={disabled}
                 onClick={() => update(letter, selectedJust)}
-                className={`flex-1 min-h-0 ${optionClass} ${
+                className={`flex-1 min-h-0 ${optionClass} disabled:cursor-not-allowed ${
                   selectedAns === letter
                     ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200'
-                    : 'border-gray-200 bg-white hover:bg-gray-50'
+                    : 'border-gray-200 bg-white enabled:hover:bg-gray-50'
                 }`}
               >
                 <MathContent className="flex-1 min-w-0">
@@ -566,11 +579,13 @@ function WyborUzasadnienia({ task, answer, onAnswer }: ClosedTaskInputProps) {
           return (
             <button
               key={i}
+              type="button"
+              disabled={disabled}
               onClick={() => update(selectedAns, num)}
-              className={`${optionClass} ${
+              className={`${optionClass} disabled:cursor-not-allowed ${
                 selectedJust === num
                   ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200'
-                  : 'border-gray-200 bg-white hover:bg-gray-50'
+                  : 'border-gray-200 bg-white enabled:hover:bg-gray-50'
               }`}
             >
               <MathContent className="flex-1 min-w-0">

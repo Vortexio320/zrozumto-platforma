@@ -262,9 +262,9 @@ zrozumto-platforma/
 | **Analysis** | `generate_analysis(questions, answers)` → JSON (mocne_strony, obszary_do_poprawy, wskazowki) |
 | **Flashcards** | `generate_flashcards(questions)` → tablica `[{przod, tyl}]` |
 | **More questions** | `generate_more_questions(existing, count, difficulty)` → nowe pytania; endpoint tworzy nowy quiz |
-| **Task check** | `check_task_answer(zadanie, answer, image_base64)` → {correct, feedback, reasoning}; dla zadań otwartych: image_base64 (vision) |
-| **Task hint** | `generate_task_hints_pair(zadanie)` → hint_1 + hint_2 (obie w jednym wywołaniu, frontend przechowuje hint_2 do drugiego użycia) |
-| **Worked example** | `generate_worked_example(zadanie)` → przykład rozwiązania |
+| **Task check** | `check_task_answer(zadanie, answer, image_base64)` → {correct, feedback, reasoning}; dla zadań otwartych: image_base64 (vision); |
+| **Task hint** | `generate_task_hints_pair(zadanie)` → hint_1 + hint_2 (obie w jednym wywołaniu, frontend przechowuje hint_2 do drugiego użycia); |
+| **Worked example** | `generate_worked_example(zadanie)` → przykład rozwiązania; |
 
 ### 3.6 Autoryzacja
 
